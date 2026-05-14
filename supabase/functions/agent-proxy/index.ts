@@ -1,0 +1,146 @@
+// @ts-nocheck
+// Supabase Edge Function: agent-proxy (NVIDIA NIM backend, OpenAI-compatible)
+// Auth + credit check via direct Supabase REST calls (no client library auth quirks)
+
+import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+
+const NVIDIA_ENDPOINT = 'https://integrate.api.nvidia.com/v1/chat/completions';
+const DEFAULT_MODEL = 'meta/llama-3.3-70b-instruct';
+const MAX_TOKENS = 2048;
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+function jsonResponse(status, body) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
+serve(async (request) => {
+  if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (request.method !== 'POST') return jsonResponse(405, { error: 'Use POST.' });
+
+  try {
+    const nvidiaKey = Deno.env.get('NVIDIA_API_KEY');
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+
+    if (!nvidiaKey) return jsonResponse(500, { error: 'Missing NVIDIA_API_KEY secret.' });
+    if (!supabaseUrl || !anonKey) return jsonResponse(500, { error: 'Missing Supabase env vars.' });
+
+    const authHeader = request.headers.get('Authorization') || '';
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+    if (!token) return jsonResponse(401, { error: 'Missing bearer token.' });
+
+    // 1. Verify user via Supabase Auth REST API
+    const authRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'apikey': anonKey,
+      },
+    });
+    if (!authRes.ok) {
+      return jsonResponse(401, { error: 'Invalid or expired session.' });
+    }
+    const authUser = await authRes.json();
+    if (!authUser?.id) {
+      return jsonResponse(401, { error: 'Could not identify user.' });
+    }
+
+    // 2. Parse request body
+    const payload = await request.json().catch(() => null);
+    if (!payload || !Array.isArray(payload.messages) || payload.messages.length === 0) {
+      return jsonResponse(400, { error: 'messages must be a non-empty array.' });
+    }
+
+    // 3. Deduct 1 credit via RPC (runs as the user so auth.uid() works)
+    //
+    // TESTING BYPASS: when Supabase secret BYPASS_CREDITS=true, we skip the
+    // RPC and pretend the balance is unchanged. Used while debugging tools so
+    // we don't burn real credits. REMOVE this branch (or unset the secret)
+    // before production launch.
+    const bypassCredits = Deno.env.get('BYPASS_CREDITS') === 'true';
+    let newBalance: number | null = null;
+
+    if (bypassCredits) {
+      console.log('[agent-proxy] BYPASS_CREDITS=true — skipping consume_credit');
+      newBalance = 9999; // sentinel so the UI shows "credits" but never empties
+    } else {
+      const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/consume_credit`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'apikey': anonKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+      const rpcJson = await rpcRes.json().catch(() => null);
+
+      if (!rpcRes.ok) {
+        const msg = rpcJson?.message || rpcJson?.error || '';
+        if (msg.includes('NO_CREDITS')) {
+          return jsonResponse(402, { error: 'Insufficient credits. Please top up.' });
+        }
+        return jsonResponse(500, { error: `Credit check failed: ${msg}` });
+      }
+
+      newBalance =
+        rpcJson && typeof rpcJson === 'object' && typeof rpcJson.credits_balance === 'number'
+          ? rpcJson.credits_balance
+          : null;
+    }
+
+    // 4. Call NVIDIA NIM (OpenAI-compatible chat/completions)
+    const { messages, tools, system, model } = payload;
+
+    const nimMessages = [];
+    if (typeof system === 'string' && system.trim()) {
+      nimMessages.push({ role: 'system', content: system });
+    }
+    nimMessages.push(...messages);
+
+    const nimBody = {
+      model: typeof model === 'string' && model ? model : DEFAULT_MODEL,
+      messages: nimMessages,
+      max_tokens: MAX_TOKENS,
+      temperature: 0.2,
+      top_p: 0.7,
+      stream: false,
+    };
+    if (Array.isArray(tools) && tools.length > 0) {
+      nimBody.tools = tools;
+      nimBody.tool_choice = 'auto';
+    }
+
+    const nimRes = await fetch(NVIDIA_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${nvidiaKey}`,
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(nimBody),
+    });
+
+    const nimJson = await nimRes.json().catch(() => null);
+    if (!nimRes.ok) {
+      const msg =
+        nimJson?.error?.message ||
+        nimJson?.detail ||
+        nimJson?.message ||
+        `NVIDIA NIM request failed (${nimRes.status}).`;
+      return jsonResponse(nimRes.status, { error: msg });
+    }
+
+    return jsonResponse(200, { response: nimJson, credits_balance: newBalance });
+
+  } catch (err) {
+    return jsonResponse(500, { error: err instanceof Error ? err.message : 'Unknown server error.' });
+  }
+});

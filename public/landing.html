@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VO System | QS-Focused BIM VO Platform</title>
+  <meta
+    name="description"
+    content="VO System is a QS-focused BIM variation platform for IFC comparison, BQ mapping, star-rate build-up, and commercial-grade VO substantiation."
+  />
+  <style>
+    :root {
+      --bg: #08101d;
+      --bg-soft: #0f1728;
+      --panel: rgba(15, 23, 40, 0.92);
+      --panel-strong: rgba(10, 16, 29, 0.98);
+      --line: rgba(148, 163, 184, 0.16);
+      --line-strong: rgba(56, 189, 248, 0.34);
+      --text: #edf5ff;
+      --muted: #98a6c3;
+      --blue: #38bdf8;
+      --blue-strong: #0284c7;
+      --green: #34d399;
+      --amber: #fbbf24;
+      --red: #fb7185;
+      --shadow: 0 28px 80px rgba(2, 6, 23, 0.34);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(14, 165, 233, 0.12), transparent 28%),
+        radial-gradient(circle at top right, rgba(52, 211, 153, 0.08), transparent 24%),
+        linear-gradient(180deg, #07101d 0%, #09111f 45%, #07101a 100%);
+      line-height: 1.6;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .wrap {
+      width: min(1220px, calc(100vw - 40px));
+      margin: 0 auto;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(14px);
+      background: rgba(6, 11, 20, 0.78);
+      border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    }
+
+    .topbar-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      min-height: 72px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+
+    .brand-mark {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.24), rgba(2, 132, 199, 0.45));
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      color: #d9f4ff;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .nav a:hover { color: #d7ebff; }
+
+    .nav-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 18px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, var(--blue), var(--blue-strong));
+      color: white;
+      font-weight: 700;
+      box-shadow: 0 12px 30px rgba(2, 132, 199, 0.24);
+    }
+
+    .hero {
+      padding: 56px 0 36px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
+      gap: 28px;
+      align-items: stretch;
+    }
+
+    .hero-copy {
+      padding: 8px 0;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(56, 189, 248, 0.22);
+      background: rgba(56, 189, 248, 0.08);
+      color: #bdeaff;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 22px 0 18px;
+      font-size: clamp(38px, 5vw, 68px);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+    }
+
+    .lead {
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.8;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 28px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 50px;
+      padding: 0 18px;
+      border-radius: 14px;
+      border: 1px solid transparent;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+    }
+
+    .btn:hover { transform: translateY(-1px); }
+
+    .btn-primary {
+      color: #fff;
+      background: linear-gradient(135deg, #0ea5e9, #0369a1);
+      box-shadow: 0 18px 34px rgba(2, 132, 199, 0.24);
+    }
+
+    .btn-secondary {
+      color: #d8e8ff;
+      background: rgba(255, 255, 255, 0.02);
+      border-color: rgba(148, 163, 184, 0.2);
+    }
+
+    .hero-panel,
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .hero-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+    }
+
+    .hero-panel-head {
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,0.02);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .mockup {
+      padding: 20px;
+      display: grid;
+      gap: 14px;
+      min-height: 100%;
+      background:
+        linear-gradient(180deg, rgba(56, 189, 248, 0.04), transparent 34%),
+        rgba(9, 14, 24, 0.75);
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .summary-card {
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      background: rgba(255,255,255,0.02);
+    }
+
+    .summary-card strong {
+      display: block;
+      font-size: 26px;
+      margin-top: 2px;
+    }
+
+    .canvas {
+      min-height: 250px;
+      border-radius: 18px;
+      border: 1px solid rgba(56, 189, 248, 0.18);
+      background:
+        linear-gradient(135deg, rgba(56, 189, 248, 0.08), transparent 55%),
+        linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0)),
+        #0a1220;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .canvas::before,
+    .canvas::after {
+      content: "";
+      position: absolute;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.18);
+      filter: blur(18px);
+    }
+
+    .canvas::before {
+      width: 180px;
+      height: 180px;
+      top: 26px;
+      left: 42px;
+    }
+
+    .canvas::after {
+      width: 120px;
+      height: 120px;
+      right: 62px;
+      bottom: 44px;
+      background: rgba(52, 211, 153, 0.12);
+    }
+
+    .wireframe {
+      position: absolute;
+      inset: 22px;
+      border-radius: 16px;
+      border: 1px dashed rgba(148, 163, 184, 0.22);
+      display: grid;
+      place-items: center;
+      color: #ccecff;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .metric-strip {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .metric-pill {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      background: rgba(255,255,255,0.03);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .section {
+      padding: 24px 0;
+    }
+
+    .section-head {
+      margin-bottom: 18px;
+    }
+
+    .section-head h2 {
+      margin: 0 0 10px;
+      font-size: clamp(28px, 3vw, 40px);
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+    }
+
+    .section-head p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 760px;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .feature-card {
+      padding: 22px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .feature-tag {
+      display: inline-flex;
+      margin-bottom: 12px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 800;
+    }
+
+    .blue { background: rgba(56, 189, 248, 0.12); color: #bdeaff; }
+    .green { background: rgba(52, 211, 153, 0.12); color: #baf5df; }
+    .amber { background: rgba(251, 191, 36, 0.12); color: #ffe59d; }
+    .red { background: rgba(251, 113, 133, 0.12); color: #ffc1cd; }
+
+    .feature-card h3 {
+      margin: 0 0 10px;
+      font-size: 20px;
+    }
+
+    .feature-card p,
+    .feature-card li {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .feature-card ul {
+      margin: 12px 0 0;
+      padding-left: 18px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 18px;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 14px;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .timeline-index {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.22);
+      color: #dff4ff;
+      font-weight: 900;
+    }
+
+    .timeline-body {
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.02);
+    }
+
+    .timeline-body h4 {
+      margin: 0 0 6px;
+      font-size: 16px;
+    }
+
+    .timeline-body p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+
+    th {
+      background: rgba(56, 189, 248, 0.08);
+      color: #c9ebff;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 12px;
+    }
+
+    tr:nth-child(even) td {
+      background: rgba(255,255,255,0.015);
+    }
+
+    .cta {
+      margin: 30px 0 0;
+      padding: 28px;
+      border-radius: 28px;
+      background:
+        linear-gradient(135deg, rgba(2, 132, 199, 0.28), rgba(15, 23, 42, 0.95)),
+        rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(56, 189, 248, 0.24);
+      box-shadow: var(--shadow);
+      display: grid;
+      grid-template-columns: 1.35fr 0.8fr;
+      gap: 24px;
+      align-items: center;
+    }
+
+    .cta h2 {
+      margin: 0 0 10px;
+      font-size: clamp(30px, 4vw, 48px);
+      line-height: 1.04;
+      letter-spacing: -0.03em;
+    }
+
+    .cta p {
+      margin: 0;
+      color: #d1e6fb;
+      font-size: 16px;
+    }
+
+    .cta-box {
+      padding: 18px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .cta-box strong {
+      display: block;
+      font-size: 28px;
+      margin-bottom: 6px;
+    }
+
+    .footer {
+      padding: 26px 0 50px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .footer-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+      border-top: 1px solid rgba(148, 163, 184, 0.12);
+      padding-top: 18px;
+    }
+
+    @media (max-width: 1100px) {
+      .hero,
+      .split,
+      .cta,
+      .feature-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .wrap {
+        width: min(100vw - 24px, 1220px);
+      }
+
+      .topbar-inner {
+        min-height: 64px;
+        flex-wrap: wrap;
+        padding: 10px 0;
+      }
+
+      .nav {
+        width: 100%;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 13px;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <div class="brand">
+        <span class="brand-mark">VO</span>
+        <span>VO System</span>
+      </div>
+      <nav class="nav">
+        <a href="#features">能力</a>
+        <a href="#workflow">流程</a>
+        <a href="#security">安全</a>
+        <a href="#deployment">上线</a>
+        <a class="nav-cta" href="/">Open App</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="eyebrow">QS-Focused BIM Variation Platform</span>
+        <h1>把 IFC 变更直接翻译成能拿去算钱、索赔、谈判的 VO 底稿</h1>
+        <p class="lead">
+          VO System 面向总包 QS 与商业团队，专注处理 IFC 对比、SMM2 计量、BQ 挂载、Star Rate 识别、Excel 底稿导出和云端额度控制。
+          模型仍在本地浏览器解析，计费与充值链路走 Supabase + Stripe，兼顾数据边界与商业化闭环。
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="/">进入系统</a>
+          <a class="btn btn-secondary" href="/go-live-pack.html">查看上线资料</a>
+        </div>
+        <div class="metric-strip" style="margin-top: 24px;">
+          <span class="metric-pill">双 IFC 比较</span>
+          <span class="metric-pill">BQ Mapping</span>
+          <span class="metric-pill">Star Rate Build-up</span>
+          <span class="metric-pill">Stripe 点数付费</span>
+        </div>
+      </div>
+
+      <aside class="hero-panel">
+        <div class="hero-panel-head">
+          <span>Commercial VO Workbench</span>
+          <span>Local IFC + Cloud Billing</span>
+        </div>
+        <div class="mockup">
+          <div class="summary-grid">
+            <div class="summary-card">
+              <div class="small">VO Omissions</div>
+              <strong style="color: #fca5a5;">8</strong>
+              <div class="small">PWD-style commercial split</div>
+            </div>
+            <div class="summary-card">
+              <div class="small">VO Additions</div>
+              <strong style="color: #86efac;">5</strong>
+              <div class="small">With rate and star-rate hooks</div>
+            </div>
+            <div class="summary-card">
+              <div class="small">Pending Rates</div>
+              <strong style="color: #fde68a;">6</strong>
+              <div class="small">Escalated for QS review</div>
+            </div>
+          </div>
+          <div class="canvas">
+            <div class="wireframe">3D + Commercial Overlay</div>
+          </div>
+          <div class="metric-strip">
+            <span class="metric-pill">Shield Rules</span>
+            <span class="metric-pill">Formwork Alert</span>
+            <span class="metric-pill">Forced Star Rate</span>
+            <span class="metric-pill">BQ Unit Check</span>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="section" id="features">
+      <div class="section-head">
+        <h2>不是做“模型 viewer”，而是做商业动作引擎</h2>
+        <p>系统重点不是把 IFC 看出来，而是把模型语言转换成合同语言和计价动作，让 QS 能直接进入挂载、核价、出表、追索赔。</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature-card">
+          <span class="feature-tag blue">Diff Engine</span>
+          <h3>技术差异直接落到 Omission / Addition</h3>
+          <p>所有技术 Modified 最终都会按商业动作拆成 Omission + Addition，避免出现“看得到修改，算不出钱”的断层。</p>
+          <ul>
+            <li>GlobalId 对比</li>
+            <li>材质 / type / pset / 属性 / 数量差异</li>
+            <li>商业表里直接带 Qty / Unit / Rate / Amount</li>
+          </ul>
+        </article>
+        <article class="feature-card">
+          <span class="feature-tag green">QS Logic</span>
+          <h3>带 QS 灵魂的规则层</h3>
+          <p>不是单纯几何 diff。系统会套 SMM2 风格的计量、Shield、Formwork、Star Rate、EOT 提示，先把漏财坑挡住。</p>
+          <ul>
+            <li>Brickwork / Concrete opening shield</li>
+            <li>Formwork ripple-effect trigger</li>
+            <li>Forced Star Rate trapdoor</li>
+          </ul>
+        </article>
+        <article class="feature-card">
+          <span class="feature-tag amber">Commercial Output</span>
+          <h3>直接导出底稿，不是只给 JSON</h3>
+          <p>浏览器里跑完，直接导出 VO Cover Sheet、Summary、Star Rate Register、Build-up、VO Substantiation。</p>
+          <ul>
+            <li>Excel 可继续手调</li>
+            <li>BQ Mapping Register 留痕</li>
+            <li>客户可拿去内部评审或开会</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="split">
+        <div class="panel" style="padding: 24px;">
+          <div class="section-head" style="margin-bottom: 14px;">
+            <h2>为什么这套系统适合上线</h2>
+            <p>当前版本已经具备对外演示、内部试点、受控上线的必要组件，尤其是支付闭环已经收口。</p>
+          </div>
+          <div class="timeline">
+            <div class="timeline-item">
+              <div class="timeline-index">1</div>
+              <div class="timeline-body">
+                <h4>本地解析 IFC</h4>
+                <p>模型核心数据留在浏览器端解析，不把 IFC 原始文件上传到云端。</p>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-index">2</div>
+              <div class="timeline-body">
+                <h4>云端点数控制</h4>
+                <p>Excel 导出前先做云端额度检查和扣费，避免本地篡改。</p>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-index">3</div>
+              <div class="timeline-body">
+                <h4>Stripe 充值闭环</h4>
+                <p>Checkout 发起、Webhook 发货、前端回跳刷新余额已经接通。</p>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-index">4</div>
+              <div class="timeline-body">
+                <h4>Webhook 幂等 + 商品校验</h4>
+                <p>发货前不仅验签，还校验价格、币种、数量和 line item，避免误发点数。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="padding: 24px;" id="security">
+          <div class="section-head" style="margin-bottom: 14px;">
+            <h2>安全与控制边界</h2>
+            <p>这套商业化方案用“本地算模型、云端算额度”的方式收住了两个边界。</p>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>边界</th>
+                <th>处理方式</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>IFC 原始模型</td>
+                <td>本地浏览器解析，不依赖上传云端</td>
+              </tr>
+              <tr>
+                <td>点数扣费</td>
+                <td>Supabase RPC 云端扣减，前端不能直接改余额</td>
+              </tr>
+              <tr>
+                <td>充值发货</td>
+                <td>Stripe Webhook + 签名校验 + 幂等表</td>
+              </tr>
+              <tr>
+                <td>商品合法性</td>
+                <td>校验 price_id / currency / amount_total / quantity</td>
+              </tr>
+              <tr>
+                <td>未登录访问</td>
+                <td>AuthGuard 阻断，必须登录后进入工作台</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="workflow">
+      <div class="section-head">
+        <h2>典型工作流</h2>
+        <p>这不是给 BIM 协调员的流程图，而是给 QS 与商业经理的实际使用路径。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>步骤</th>
+              <th>用户动作</th>
+              <th>系统动作</th>
+              <th>商业结果</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td>上传 Base / Revision IFC</td>
+              <td>浏览器端提取构件、材质、属性、数量、位置</td>
+              <td>生成可比对的 BimComponent 索引</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>点击 Run VO Comparison</td>
+              <td>技术 diff + QS 规则 + 商业拆分</td>
+              <td>得到 Omission / Addition / Star Rate / Shield 结果</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>进入 BQ Mapping</td>
+              <td>按 QS Label 做 BQ 挂载，校验单位</td>
+              <td>避免低价套用、拦截 Unit Mismatch</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td>点击 Generate VO Excel</td>
+              <td>云端检查并扣除 1 次 premium audit</td>
+              <td>导出完整底稿包</td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td>额度不足时充值</td>
+              <td>Stripe Checkout + Webhook 发货 + 回跳刷新</td>
+              <td>余额增加 50，再次放行导出</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section" id="deployment">
+      <div class="section-head">
+        <h2>上线最小清单</h2>
+        <p>当前版本适合做受控上线。下面这几项完成后，就可以转到生产环境演示或小范围商用试点。</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature-card">
+          <span class="feature-tag blue">Infra</span>
+          <h3>Supabase</h3>
+          <ul>
+            <li>Auth 已接入</li>
+            <li>user_credits / consume_credit 已存在</li>
+            <li>stripe_webhook_events / increment_user_credits 需在生产库执行</li>
+          </ul>
+        </article>
+        <article class="feature-card">
+          <span class="feature-tag green">Billing</span>
+          <h3>Stripe</h3>
+          <ul>
+            <li>Price ID 已固定</li>
+            <li>Webhook 只监听 checkout.session.completed</li>
+            <li>发货前校验金额、币种、line item</li>
+          </ul>
+        </article>
+        <article class="feature-card">
+          <span class="feature-tag amber">Release</span>
+          <h3>部署</h3>
+          <ul>
+            <li><code>npm run build</code> 已通过</li>
+            <li>发布 React 前端与 `public/landing.html`</li>
+            <li>部署两个 Edge Functions</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div>
+        <h2>准备把它从内部工具推到正式上线阶段</h2>
+        <p>
+          现阶段最适合的动作不是再继续堆概念，而是做正式域名、生产 secrets、真实 Stripe 支付验证、以及第一批客户演示脚本。
+        </p>
+      </div>
+      <div class="cta-box">
+        <strong>上线资料已备齐</strong>
+        <div class="small" style="margin-bottom: 16px;">内部交接页、对外 Landing Page、支付闭环、部署清单都已落地。</div>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <a class="btn btn-primary" href="/go-live-pack.html">Open Go-Live Pack</a>
+          <a class="btn btn-secondary" href="/">Launch App</a>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div class="footer-row">
+        <span>VO System · IFC-based QS / VO commercial platform</span>
+        <span>Landing page artifact generated for launch preparation · 2026-03-15</span>
+      </div>
+    </footer>
+  </main>
+</body>
+</html>
