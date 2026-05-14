@@ -7,8 +7,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-300">
-        <div className="rounded-2xl border border-white/8 bg-zinc-900/80 px-6 py-5 text-sm font-semibold uppercase tracking-[0.2em] text-sky-300">
+      <div className="flex min-h-screen items-center justify-center bg-slate-900 text-slate-300">
+        <div className="rounded-2xl border border-slate-700/50 bg-slate-800/80 px-6 py-5 text-sm font-semibold uppercase tracking-[0.2em] text-blue-400">
           Initializing secure session...
         </div>
       </div>
