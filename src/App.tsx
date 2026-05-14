@@ -11,27 +11,6 @@ import {
 import { exportVoSubstantiationWorkbook } from './vo-report';
 import { DEFAULT_TEST_BQ_ITEMS, parseBqWorkbook, exportBqTemplateWorkbook, normalizeBqUnit, recommendBqMatches } from './bq-tools';
 import { PROJECT_QS_OVERRIDES } from './qs-project-config';
-import {
-  Upload,
-  RefreshCw,
-  Play,
-  Home,
-  BoxSelect,
-  Download,
-  Sparkles,
-  FileBox,
-  FileSpreadsheet,
-  ScrollText,
-  Layers3,
-  ClipboardList,
-  X,
-  CheckCircle2,
-  Circle,
-  Zap,
-  Coins,
-  LogOut,
-  FileText,
-} from 'lucide-react';
 import AuthGuard from './components/AuthGuard';
 import AppHeader from './components/AppHeader';
 import AppSidebar from './components/AppSidebar';
