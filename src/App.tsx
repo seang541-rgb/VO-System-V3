@@ -572,9 +572,9 @@ export default function App() {
       detail: formatCommercialDetail(action),
       actionClass: action.action === 'Omission' ? 'text-red-400' : 'text-green-400',
       techClass: action.sourceStatus === 'Modified' ? 'text-amber-400' : action.sourceStatus === 'Added' ? 'text-green-400' : 'text-red-400',
-      qsClass: action.qsImpact === 'ignored' ? 'text-zinc-400' : 'text-emerald-400',
-      rateClass: action.rateStatus === 'forced-star-rate' ? 'font-semibold text-red-300' : action.rateStatus === 'rated' ? 'text-sky-300' : 'text-amber-300',
-      quantityRiskClass: action.quantityRisk ? 'font-semibold text-red-300' : 'text-zinc-500',
+      qsClass: action.qsImpact === 'ignored' ? 'text-slate-400' : 'text-emerald-400',
+      rateClass: action.rateStatus === 'forced-star-rate' ? 'font-semibold text-red-300' : action.rateStatus === 'rated' ? 'text-blue-400' : 'text-amber-300',
+      quantityRiskClass: action.quantityRisk ? 'font-semibold text-red-300' : 'text-slate-500',
       amountClass: action.rateStatus === 'forced-star-rate'
         ? 'font-semibold text-red-300'
         : action.rateStatus === 'rated'
@@ -832,7 +832,7 @@ export default function App() {
 
   return (
     <AuthGuard>
-      <div className="min-h-screen w-full overflow-x-hidden bg-zinc-950 font-sans text-zinc-300">
+      <div className="min-h-screen w-full overflow-x-hidden bg-slate-900 font-sans text-slate-300">
       {/* ── HEADER (Idea Nest) ────────────────────────────── */}
       <AppHeader
         creditsBalance={creditsBalance}
@@ -953,7 +953,7 @@ export default function App() {
       </div>
       </div>
       {billingNotice && (
-        <div className={`mx-6 mt-4 rounded-2xl border px-4 py-3 text-sm ${billingNotice.tone === 'success' ? 'border-emerald-900/70 bg-emerald-950/30 text-emerald-200' : 'border-sky-900/70 bg-sky-950/30 text-sky-200'}`}>
+        <div className={`mx-6 mt-4 rounded-2xl border px-4 py-3 text-sm ${billingNotice.tone === 'success' ? 'border-emerald-900/70 bg-emerald-950/30 text-emerald-200' : 'border-blue-900/70 bg-blue-950/30 text-blue-200'}`}>
           {billingNotice.message}
         </div>
       )}
@@ -969,17 +969,17 @@ export default function App() {
       )}
       {showPaywall && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 px-6 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-[2rem] border border-white/10 bg-zinc-950/95 p-8 shadow-[0_30px_120px_rgba(2,6,23,0.75)]">
+          <div className="w-full max-w-2xl rounded-[2rem] border border-slate-700 bg-slate-900/95 p-8 shadow-[0_30px_120px_rgba(2,6,23,0.75)]">
             <div className="text-xs font-semibold uppercase tracking-[0.28em] text-red-300">Premium Audit Paywall</div>
             <h2 className="mt-4 text-3xl font-black text-white">Your 5 Free Premium Audits are Exhausted.</h2>
-            <p className="mt-4 max-w-xl text-base leading-7 text-zinc-400">Unlock the full Star Rate Build-up and VO Commercial Report to claim your RM 50,000+ profit.</p>
-            <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-900/70 px-4 py-4 text-sm text-zinc-300">
+            <p className="mt-4 max-w-xl text-base leading-7 text-slate-400">Unlock the full Star Rate Build-up and VO Commercial Report to claim your RM 50,000+ profit.</p>
+            <div className="mt-6 rounded-2xl border border-slate-700 bg-slate-800/70 px-4 py-4 text-sm text-slate-300">
               Current balance: <span className="font-black text-white">{creditsBalance ?? 0}</span> premium audits
             </div>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <button
                 type="button"
-                className="flex-1 rounded-2xl bg-sky-500 px-5 py-4 text-sm font-black uppercase tracking-[0.16em] text-white transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-300"
+                className="flex-1 rounded-2xl bg-blue-600 px-5 py-4 text-sm font-black uppercase tracking-[0.16em] text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-300"
                 onClick={handleTopUpCheckout}
                 disabled={isStartingCheckout || !user}
               >
@@ -987,7 +987,7 @@ export default function App() {
               </button>
               <button
                 type="button"
-                className="rounded-2xl border border-zinc-700 bg-zinc-900 px-5 py-4 text-sm font-semibold text-zinc-300 transition hover:bg-zinc-800 hover:text-white"
+                className="rounded-2xl border border-slate-600 bg-slate-800 px-5 py-4 text-sm font-semibold text-slate-300 transition hover:bg-slate-700 hover:text-white"
                 onClick={() => setShowPaywall(false)}
               >
                 Close

@@ -141,20 +141,20 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
   }, [baseReady, compareReady, revReady, toolContext.baseComponents.length, toolContext.revisionComponents.length]);
 
   return (
-    <div className="flex h-full min-h-[28rem] flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/80">
-      <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-zinc-900/80 px-4 py-3">
+    <div className="flex h-full min-h-[28rem] flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/80">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-700 bg-slate-800/80 px-4 py-3">
         <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-sky-300" />
+          <Sparkles className="h-4 w-4 text-blue-400" />
           <div>
-            <div className="text-sm font-bold uppercase tracking-[0.18em] text-sky-300">IFC Copilot</div>
-            <div className="text-[11px] text-zinc-400">{statusLine}</div>
+            <div className="text-sm font-bold uppercase tracking-[0.18em] text-blue-400">IFC Copilot</div>
+            <div className="text-[11px] text-slate-400">{statusLine}</div>
           </div>
         </div>
         <button
           type="button"
           onClick={handleReset}
           disabled={busy}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-300 hover:border-zinc-500 hover:text-white disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-600 bg-slate-800 px-2.5 py-1.5 text-xs text-slate-300 hover:border-slate-500 hover:text-white disabled:opacity-50"
         >
           <RefreshCw className="h-3 w-3" /> Reset
         </button>
@@ -163,9 +163,9 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {entries.length === 0 && (
           <div className="space-y-3">
-            <div className="rounded-xl border border-white/5 bg-zinc-900/60 p-4 text-sm text-zinc-300">
-              <div className="font-semibold text-sky-300">你好，我系 VO System 内嵌嘅 IFC Copilot。</div>
-              <div className="mt-1 text-xs text-zinc-400">
+            <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4 text-sm text-slate-300">
+              <div className="font-semibold text-blue-400">你好，我系 VO System 内嵌嘅 IFC Copilot。</div>
+              <div className="mt-1 text-xs text-slate-400">
                 上传 base / revision IFC 后可以叫我对比、总结商业影响、或直接生成 Excel。每次对话会消耗 1 个 credit。
               </div>
             </div>
@@ -175,7 +175,7 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
                   key={prompt}
                   type="button"
                   onClick={() => handleSend(prompt)}
-                  className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-3 py-2.5 text-left text-xs text-zinc-300 hover:border-sky-500/40 hover:bg-sky-500/10 hover:text-white"
+                  className="rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-2.5 text-left text-xs text-slate-300 hover:border-blue-600/40 hover:bg-blue-600/10 hover:text-white"
                 >
                   {prompt}
                 </button>
@@ -188,7 +188,7 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
           if (entry.kind === 'user') {
             return (
               <div key={entry.id} className="flex justify-end">
-                <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-sky-600/90 px-3.5 py-2 text-sm text-white shadow">
+                <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-blue-600 px-3.5 py-2 text-sm text-white shadow">
                   {entry.text}
                 </div>
               </div>
@@ -197,7 +197,7 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
           if (entry.kind === 'assistant') {
             return (
               <div key={entry.id} className="flex justify-start">
-                <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tl-sm border border-white/10 bg-zinc-900/80 px-3.5 py-2 text-sm text-zinc-100 shadow">
+                <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tl-sm border border-slate-700 bg-slate-800/80 px-3.5 py-2 text-sm text-slate-100 shadow">
                   {entry.text}
                 </div>
               </div>
@@ -206,7 +206,7 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
           if (entry.kind === 'tool') {
             return (
               <div key={entry.id} className="flex justify-start">
-                <details className="w-full max-w-[85%] rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-1.5 text-xs text-amber-200">
+                <details className="w-full max-w-[85%] rounded-xl border border-slate-700 bg-amber-500/5 px-3 py-1.5 text-xs text-slate-400">
                   <summary className="flex cursor-pointer items-center gap-2 font-mono">
                     <Wrench className="h-3 w-3" /> {entry.text}
                   </summary>
@@ -229,8 +229,8 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
         })}
 
         {busy && (
-          <div className="flex items-center gap-2 text-xs text-zinc-400">
-            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-sky-400" />
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-400" />
             {activeToolLabel ? `Running tool: ${activeToolLabel}` : 'Thinking...'}
           </div>
         )}
@@ -241,7 +241,7 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
           e.preventDefault();
           void handleSend(input);
         }}
-        className="border-t border-white/10 bg-zinc-900/80 p-3"
+        className="border-t border-slate-700 bg-slate-800/80 p-3"
       >
         <div className="flex items-end gap-2">
           <textarea
@@ -256,17 +256,17 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
             rows={2}
             placeholder={signedIn ? '输入问题或指令… (Enter 发送, Shift+Enter 换行)' : '请先登录'}
             disabled={busy || !signedIn}
-            className="flex-1 resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-sky-500/60 focus:outline-none disabled:opacity-60"
+            className="flex-1 resize-none rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-blue-600/60 focus:outline-none disabled:opacity-60"
           />
           <button
             type="submit"
             disabled={busy || !signedIn || !input.trim()}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-white shadow hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Send className="h-4 w-4" /> 发送
           </button>
         </div>
-        <div className="mt-2 text-[11px] text-zinc-500">
+        <div className="mt-2 text-[11px] text-slate-500">
           每次对话消耗 1 个 credit（与 Excel 导出共用同一余额）。
         </div>
       </form>
