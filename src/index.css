@@ -57,4 +57,10 @@
   .animate-scan {
     animation: scan 3s ease-in-out infinite;
   }
+
+  @keyframes loading-bar {
+    0% { width: 15%; margin-left: 0; }
+    50% { width: 60%; margin-left: 20%; }
+    100% { width: 15%; margin-left: 85%; }
+  }
 }

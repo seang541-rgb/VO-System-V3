@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles, Send, RefreshCw, Wrench } from 'lucide-react';
+import { Sparkles, Send, RefreshCw, Wrench, Loader2 } from 'lucide-react';
 import { AgentSession, type AgentEvent } from '../agent/agent-client';
 import type { ToolContext } from '../agent/tools';
 
@@ -229,9 +229,16 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
         })}
 
         {busy && (
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-400" />
-            {activeToolLabel ? `Running tool: ${activeToolLabel}` : 'Thinking...'}
+          <div className="flex items-center gap-3 rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3">
+            <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+            <div className="flex-1">
+              <div className="text-xs font-semibold text-blue-300">
+                {activeToolLabel ? `正在执行: ${activeToolLabel}` : 'Copilot 正在思考…'}
+              </div>
+              <div className="mt-0.5 text-[11px] text-slate-500">
+                {activeToolLabel ? '工具调用中，请稍候' : '分析你的问题并准备回复'}
+              </div>
+            </div>
           </div>
         )}
       </div>

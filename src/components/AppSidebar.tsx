@@ -9,6 +9,8 @@ import {
   ClipboardList,
   CheckCircle2,
   Circle,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import type { BimComponent, BqLineItem, VoComparisonResults } from '../BimEngine';
 import type { ActiveTab, ModelLoadState } from '../lib/format';
@@ -55,26 +57,50 @@ export default function AppSidebar({
       <section>
         <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Workspace</div>
         <div className="space-y-2">
-          <button type="button" onClick={onUploadBase} disabled={isRunning}
-            className={`group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition hover:border-slate-600 ${v1Components.length > 0 ? 'border-blue-600/30 bg-blue-600/5' : 'border-slate-700 bg-slate-800/50'} disabled:cursor-not-allowed disabled:opacity-50`}>
-            <FileBox className={`h-4 w-4 ${v1Components.length > 0 ? 'text-blue-400' : 'text-slate-500'}`} />
+          <button type="button" onClick={onUploadBase} disabled={isRunning || v1State === 'loading'}
+            className={`group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition hover:border-slate-600 ${v1State === 'loading' ? 'border-blue-500/40 bg-blue-600/10' : v1Components.length > 0 ? 'border-blue-600/30 bg-blue-600/5' : v1State === 'error' ? 'border-red-500/30 bg-red-500/5' : 'border-slate-700 bg-slate-800/50'} disabled:cursor-not-allowed`}>
+            {v1State === 'loading' ? <Loader2 className="h-4 w-4 animate-spin text-blue-400" /> : v1State === 'error' ? <AlertCircle className="h-4 w-4 text-red-400" /> : <FileBox className={`h-4 w-4 ${v1Components.length > 0 ? 'text-blue-400' : 'text-slate-500'}`} />}
             <div className="flex-1 overflow-hidden">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Base IFC</div>
-              <div className={`truncate text-xs ${v1Components.length > 0 ? 'text-white' : 'text-slate-400'}`}>
-                {v1File ? v1File.name : 'Not loaded · click to upload'}
-              </div>
-              {v1Components.length > 0 && <div className="text-[10px] text-slate-500">{v1Components.length} components</div>}
+              {v1State === 'loading' ? (
+                <>
+                  <div className="truncate text-xs text-blue-300">{v1File?.name ?? 'Loading...'}</div>
+                  <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-700">
+                    <div className="h-full animate-[loading-bar_2s_ease-in-out_infinite] rounded-full bg-blue-500" style={{ width: '60%' }} />
+                  </div>
+                  <div className="mt-0.5 text-[10px] text-blue-400">解析 IFC 构件中…</div>
+                </>
+              ) : (
+                <>
+                  <div className={`truncate text-xs ${v1Components.length > 0 ? 'text-white' : v1State === 'error' ? 'text-red-300' : 'text-slate-400'}`}>
+                    {v1File ? v1File.name : 'Not loaded · click to upload'}
+                  </div>
+                  {v1Components.length > 0 && <div className="text-[10px] text-slate-500">{v1Components.length} components</div>}
+                </>
+              )}
             </div>
           </button>
-          <button type="button" onClick={onUploadRevision} disabled={isRunning}
-            className={`group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition hover:border-slate-600 ${v2Components.length > 0 ? 'border-blue-600/30 bg-blue-600/5' : 'border-slate-700 bg-slate-800/50'} disabled:cursor-not-allowed disabled:opacity-50`}>
-            <FileBox className={`h-4 w-4 ${v2Components.length > 0 ? 'text-blue-400' : 'text-slate-500'}`} />
+          <button type="button" onClick={onUploadRevision} disabled={isRunning || v2State === 'loading'}
+            className={`group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition hover:border-slate-600 ${v2State === 'loading' ? 'border-blue-500/40 bg-blue-600/10' : v2Components.length > 0 ? 'border-blue-600/30 bg-blue-600/5' : v2State === 'error' ? 'border-red-500/30 bg-red-500/5' : 'border-slate-700 bg-slate-800/50'} disabled:cursor-not-allowed`}>
+            {v2State === 'loading' ? <Loader2 className="h-4 w-4 animate-spin text-blue-400" /> : v2State === 'error' ? <AlertCircle className="h-4 w-4 text-red-400" /> : <FileBox className={`h-4 w-4 ${v2Components.length > 0 ? 'text-blue-400' : 'text-slate-500'}`} />}
             <div className="flex-1 overflow-hidden">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Revision IFC</div>
-              <div className={`truncate text-xs ${v2Components.length > 0 ? 'text-white' : 'text-slate-400'}`}>
-                {v2File ? v2File.name : 'Not loaded · click to upload'}
-              </div>
-              {v2Components.length > 0 && <div className="text-[10px] text-slate-500">{v2Components.length} components</div>}
+              {v2State === 'loading' ? (
+                <>
+                  <div className="truncate text-xs text-blue-300">{v2File?.name ?? 'Loading...'}</div>
+                  <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-700">
+                    <div className="h-full animate-[loading-bar_2s_ease-in-out_infinite] rounded-full bg-blue-500" style={{ width: '60%' }} />
+                  </div>
+                  <div className="mt-0.5 text-[10px] text-blue-400">解析 IFC 构件中…</div>
+                </>
+              ) : (
+                <>
+                  <div className={`truncate text-xs ${v2Components.length > 0 ? 'text-white' : v2State === 'error' ? 'text-red-300' : 'text-slate-400'}`}>
+                    {v2File ? v2File.name : 'Not loaded · click to upload'}
+                  </div>
+                  {v2Components.length > 0 && <div className="text-[10px] text-slate-500">{v2Components.length} components</div>}
+                </>
+              )}
             </div>
           </button>
           <button type="button" onClick={onUploadBq} disabled={isRunning}
@@ -151,13 +177,13 @@ export default function AppSidebar({
           <div className="flex items-center justify-between">
             <span className="text-slate-400">Base IFC</span>
             <span className="flex items-center gap-1">
-              {v1Components.length > 0 ? <><CheckCircle2 className="h-3 w-3 text-emerald-400" /><span className="text-emerald-400">Ready</span></> : <><Circle className="h-3 w-3 text-slate-600" /><span className="text-slate-500">Pending</span></>}
+              {v1State === 'loading' ? <><Loader2 className="h-3 w-3 animate-spin text-blue-400" /><span className="text-blue-400">解析中</span></> : v1State === 'error' ? <><AlertCircle className="h-3 w-3 text-red-400" /><span className="text-red-400">Error</span></> : v1Components.length > 0 ? <><CheckCircle2 className="h-3 w-3 text-emerald-400" /><span className="text-emerald-400">Ready</span></> : <><Circle className="h-3 w-3 text-slate-600" /><span className="text-slate-500">Pending</span></>}
             </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-slate-400">Revision IFC</span>
             <span className="flex items-center gap-1">
-              {v2Components.length > 0 ? <><CheckCircle2 className="h-3 w-3 text-emerald-400" /><span className="text-emerald-400">Ready</span></> : <><Circle className="h-3 w-3 text-slate-600" /><span className="text-slate-500">Pending</span></>}
+              {v2State === 'loading' ? <><Loader2 className="h-3 w-3 animate-spin text-blue-400" /><span className="text-blue-400">解析中</span></> : v2State === 'error' ? <><AlertCircle className="h-3 w-3 text-red-400" /><span className="text-red-400">Error</span></> : v2Components.length > 0 ? <><CheckCircle2 className="h-3 w-3 text-emerald-400" /><span className="text-emerald-400">Ready</span></> : <><Circle className="h-3 w-3 text-slate-600" /><span className="text-slate-500">Pending</span></>}
             </span>
           </div>
           <div className="flex items-center justify-between">
