@@ -274,7 +274,7 @@ export default function App() {
     setCompareMessage('Load two IFC files, then run the comparison.');
   };
 
-  const MAX_IFC_SIZE = 50 * 1024 * 1024; // 50 MB
+  const MAX_IFC_SIZE = 100 * 1024 * 1024; // 100 MB
 
   const handleIFCUpload = async (e: React.ChangeEvent<HTMLInputElement>, version: 'v1' | 'v2') => {
     const file = e.target.files?.[0];
@@ -282,8 +282,8 @@ export default function App() {
 
     if (file.size > MAX_IFC_SIZE) {
       const setErr = version === 'v1' ? setV1Error : setV2Error;
-      setErr(`文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，上限 50MB`);
-      toast.error(`文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，上限 50MB`);
+      setErr(`文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，上限 100MB`);
+      toast.error(`文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，上限 100MB`);
       e.target.value = '';
       return;
     }
