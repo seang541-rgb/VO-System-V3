@@ -19,6 +19,10 @@ import KPIGrid from './components/KPIGrid';
 import ResultsTable from './components/ResultsTable';
 import BQMappingPanel from './components/BQMappingPanel';
 import CopilotPanel from './components/CopilotPanel';
+import AuditPanel from './components/AuditPanel';
+import type { AuditState } from './components/AuditPanel';
+import type { AuditResult } from './audit/types';
+import toast, { Toaster } from 'react-hot-toast';
 import { useAuth } from './auth/AuthProvider';
 import { supabase } from './lib/supabase';
 import { useCredits } from './hooks/useCredits';
@@ -92,6 +96,10 @@ export default function App() {
   const [activeIfcSlot, setActiveIfcSlot] = useState<'base' | 'revision' | null>(null);
   const [mappingDrafts, setMappingDrafts] = useState<Record<string, string>>({});
   const [isExporting, setIsExporting] = useState(false);
+  const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
+  const [auditState, setAuditState] = useState<AuditState>('idle');
+  const [auditError, setAuditError] = useState('');
+  const [auditDurationMs, setAuditDurationMs] = useState(0);
   const [billingError, setBillingError] = useState('');
   const [billingNotice, setBillingNotice] = useState<{ tone: 'success' | 'info'; message: string } | null>(null);
   const [showPaywall, setShowPaywall] = useState(false);
@@ -266,9 +274,19 @@ export default function App() {
     setCompareMessage('Load two IFC files, then run the comparison.');
   };
 
+  const MAX_IFC_SIZE = 50 * 1024 * 1024; // 50 MB
+
   const handleIFCUpload = async (e: React.ChangeEvent<HTMLInputElement>, version: 'v1' | 'v2') => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.size > MAX_IFC_SIZE) {
+      const setErr = version === 'v1' ? setV1Error : setV2Error;
+      setErr(`文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，上限 50MB`);
+      toast.error(`文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，上限 50MB`);
+      e.target.value = '';
+      return;
+    }
 
     resetComparison();
 
@@ -303,11 +321,13 @@ export default function App() {
       setState('ready');
       setActiveIfcSlot(version === 'v1' ? 'base' : 'revision');
       setSysLog(`${label} loaded: ${components.length} indexed elements.`);
+      toast.success(`${label} 加载完成 · ${components.length} 构件`);
     } catch (err: any) {
       const message = err?.message || 'Unknown parsing error';
       setState('error');
       setError(message);
       setSysLog(`Failed to parse ${label}: ${message}`);
+      toast.error(`${label} 加载失败`);
     }
 
     e.target.value = '';
@@ -359,6 +379,39 @@ export default function App() {
     e.target.value = '';
   };
 
+  const runAudit = useCallback(async () => {
+    const engine = ensureEngine();
+    if (!engine) return;
+    const handle = engine.getIfcHandle();
+    if (!handle) {
+      setAuditError('IFC engine not ready. Load an IFC file first.');
+      setAuditState('error');
+      return;
+    }
+    setAuditState('running');
+    setAuditError('');
+    setAuditResult(null);
+    setActiveTab('audit');
+    const t0 = performance.now();
+    try {
+      const { runAudit: doAudit } = await import('./audit/extractor');
+      const result = doAudit({ api: handle.api, modelID: handle.modelID });
+      const duration = performance.now() - t0;
+      setAuditDurationMs(duration);
+      setAuditResult(result);
+      setAuditState('done');
+      setSysLog(`Audit complete: ${result.records.length} elements in ${(duration / 1000).toFixed(1)}s`);
+      toast.success(`算量完成 · ${result.records.length} 构件 · ${(duration / 1000).toFixed(1)}s`);
+    } catch (err) {
+      setAuditDurationMs(performance.now() - t0);
+      const message = err instanceof Error ? err.message : String(err);
+      setAuditError(message);
+      setAuditState('error');
+      setSysLog(`Audit failed: ${message}`);
+      toast.error(`算量失败: ${message}`);
+    }
+  }, []);
+
   const runVOComparison = async () => {
     const engine = ensureEngine();
     if (!engine || v1State !== 'ready' || v2State !== 'ready') {
@@ -393,12 +446,14 @@ export default function App() {
       setSysLog(
         `VO Complete: ${results.added.length} Added, ${results.deleted.length} Deleted, ${results.modified.length} Modified. Commercial: ${commercial.summary.omissions} omissions, ${commercial.summary.additions} additions. Pending rates: ${commercial.summary.pendingRateActions}. Net rated value: ${formatSignedCurrencyValue(commercial.summary.netValue)}.`,
       );
+      toast.success('VO 对比完成');
     } catch (err: any) {
       const message = err?.message || 'Unknown comparison error';
       setVoResults(null);
       setCompareState('error');
       setCompareMessage(`Comparison failed: ${message}`);
       setSysLog(`VO Analysis Failed: ${message}`);
+      toast.error('VO 对比失败');
     }
 
     setIsRunning(false);
@@ -437,6 +492,7 @@ export default function App() {
         pricingContext: buildBqMappingContext(bqItems, labelMappings),
       });
       setSysLog('Premium VO Excel generated. One audit credit consumed from the secure cloud balance.');
+      toast.success('Excel 已导出');
     } catch (err: any) {
       const message = err?.message || 'Failed to validate cloud credits.';
       setBillingError(message);
@@ -811,6 +867,7 @@ export default function App() {
 
   return (
     <AuthGuard>
+      <Toaster position="top-right" toastOptions={{ style: { background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' } }} />
       <div className="min-h-screen w-full overflow-x-hidden bg-slate-900 font-sans text-slate-300">
       {/* ── HEADER (Idea Nest) ────────────────────────────── */}
       <AppHeader
@@ -839,6 +896,8 @@ export default function App() {
           onExportExcel={exportWorkbook}
           onExportBqTemplate={exportBqTemplateWorkbook}
           onTabChange={setActiveTab}
+          onRunAudit={runAudit}
+          auditState={auditState}
         />
 
         <main className="min-w-0 flex-1 overflow-x-hidden">
@@ -915,6 +974,15 @@ export default function App() {
             compareMessage={compareMessage}
             onUpdateMapping={updateLabelMapping}
             onStageDraft={stageDraftMapping}
+          />
+        ) : activeTab === 'audit' ? (
+          <AuditPanel
+            auditResult={auditResult}
+            auditState={auditState}
+            auditError={auditError}
+            auditDurationMs={auditDurationMs}
+            onRunAudit={runAudit}
+            canRun={v1State === 'ready' || v2State === 'ready'}
           />
         ) : (
           <div className="flex flex-col border-t border-slate-700 bg-slate-900 px-4 py-4 lg:px-6">

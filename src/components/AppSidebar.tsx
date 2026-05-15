@@ -11,6 +11,8 @@ import {
   Circle,
   Loader2,
   AlertCircle,
+  Zap,
+  BarChart3,
 } from 'lucide-react';
 import type { BimComponent, BqLineItem, VoComparisonResults } from '../BimEngine';
 import type { ActiveTab, ModelLoadState } from '../lib/format';
@@ -35,6 +37,8 @@ interface AppSidebarProps {
   onExportExcel: () => void;
   onExportBqTemplate: () => void;
   onTabChange: (tab: ActiveTab) => void;
+  onRunAudit: () => void;
+  auditState: string;
 }
 
 export default function AppSidebar({
@@ -44,12 +48,14 @@ export default function AppSidebar({
   isRunning, isExporting, activeTab,
   onUploadBase, onUploadRevision, onUploadBq,
   onRunCompare, onExportExcel, onExportBqTemplate,
-  onTabChange,
+  onTabChange, onRunAudit, auditState,
 }: AppSidebarProps) {
   const canCompare = v1State === 'ready' && v2State === 'ready' && !isRunning;
+  const canAudit = (v1State === 'ready' || v2State === 'ready') && auditState !== 'running';
   const showCopilotTab = activeTab === 'copilot';
   const showOverviewTab = activeTab === 'overview';
   const showValuationTab = activeTab === 'valuation';
+  const showAuditTab = activeTab === 'audit';
 
   return (
     <aside className="sticky top-[57px] flex h-[calc(100vh-57px)] w-72 flex-col gap-4 overflow-y-auto border-r border-slate-700 bg-slate-900 px-4 py-4">
@@ -121,6 +127,14 @@ export default function AppSidebar({
       <section>
         <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Quick Actions</div>
         <div className="space-y-1.5">
+          <button type="button" onClick={onRunAudit} disabled={!canAudit}
+            className="group flex w-full items-center gap-2.5 rounded-lg bg-amber-600 px-3 py-2 text-left text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-40">
+            {auditState === 'running' ? <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin" /> : <Zap className="h-4 w-4 flex-shrink-0" />}
+            <div className="flex-1 overflow-hidden">
+              <div className="text-xs font-semibold">{auditState === 'running' ? 'Auditing...' : 'Run Audit'}</div>
+              <div className="truncate text-[10px] text-amber-200">快速算量</div>
+            </div>
+          </button>
           <button type="button" onClick={onRunCompare} disabled={!canCompare}
             className="group flex w-full items-center gap-2.5 rounded-lg bg-blue-600 px-3 py-2 text-left text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40">
             <Play className="h-4 w-4 flex-shrink-0" />
@@ -156,6 +170,11 @@ export default function AppSidebar({
             className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${showCopilotTab ? 'bg-blue-600/20 text-blue-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
             <Sparkles className={`h-3.5 w-3.5 flex-shrink-0 ${showCopilotTab ? 'text-blue-400' : 'text-slate-600'}`} />
             <span className="text-xs font-semibold">IFC Copilot</span>
+          </button>
+          <button type="button" onClick={() => onTabChange('audit')}
+            className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${showAuditTab ? 'bg-amber-600/20 text-amber-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+            <BarChart3 className={`h-3.5 w-3.5 flex-shrink-0 ${showAuditTab ? 'text-amber-400' : 'text-slate-600'}`} />
+            <span className="text-xs font-semibold">Audit Report</span>
           </button>
           <button type="button" onClick={() => onTabChange('overview')}
             className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${showOverviewTab ? 'bg-blue-600/20 text-blue-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
