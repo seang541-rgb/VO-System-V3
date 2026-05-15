@@ -427,14 +427,15 @@ export class BimEngine {
         await this.extractComponentsFromStepText(buffer, onProgress);
       }
       return this.components;
-    } catch (error: any) {
-      onProgress?.(18, `3D parse failed (${error?.message || 'unknown error'}). Falling back to STEP text parsing...`);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : 'unknown error';
+      onProgress?.(18, `3D parse failed (${errMsg}). Falling back to STEP text parsing...`);
       await this.extractComponentsFromStepText(buffer, onProgress);
       if (this.components.length > 0) {
         this.ifcModel = null;
         return this.components;
       }
-      throw new Error(`Failed to load IFC: ${error.message}`);
+      throw new Error(`Failed to load IFC: ${errMsg}`);
     }
   }
 
@@ -483,10 +484,10 @@ export class BimEngine {
           } else {
             missingGlobalIdCount += 1;
           }
-        } catch (error: any) {
+        } catch (error: unknown) {
           buildErrorCount += 1;
           if (sampleErrors.length < 3) {
-            sampleErrors.push(`#${expressID}: ${error?.message || 'Unknown extraction error'}`);
+            sampleErrors.push(`#${expressID}: ${error instanceof Error ? error.message : 'Unknown extraction error'}`);
           }
         }
 
@@ -1002,6 +1003,55 @@ export class BimEngine {
 
   async compareModels(baseComps: BimComponent[], revComps: BimComponent[]): Promise<VoComparisonResults> {
     return compareModels(baseComps, revComps);
+  }
+
+  /**
+   * Highlight and zoom the camera to a single element by expressID.
+   * Creates a bright "focus" subset and fits the camera to its bounding box.
+   * Returns false if the model isn't loaded or the subset couldn't be created.
+   */
+  focusOnExpressId(expressID: number): boolean {
+    if (!this.ifcModel) return false;
+    const manager = this.ifcLoader.ifcManager;
+    const modelID = this.ifcModel.modelID;
+
+    // Remove previous focus highlight
+    try {
+      manager.removeSubset(modelID, this.matFocused, 'vo_focus');
+    } catch {
+      // No previous focus subset — safe to ignore.
+    }
+
+    try {
+      const subset = manager.createSubset({
+        modelID,
+        ids: [expressID],
+        material: this.matFocused,
+        removePrevious: true,
+        customID: 'vo_focus',
+      });
+      if (!subset) return false;
+
+      // Fit camera to the focused element's bounding box
+      const box = new THREE.Box3().setFromObject(subset);
+      if (!box.isEmpty()) {
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        const radius = Math.max(size.length() * 0.5, 0.5);
+        const halfFov = THREE.MathUtils.degToRad(this.camera.fov * 0.5);
+        const distance = (radius / Math.tan(halfFov)) * 2.5;
+        const direction = new THREE.Vector3(1, 0.6, 0.8).normalize();
+
+        this.camera.position.copy(center.clone().addScaledVector(direction, distance));
+        this.camera.lookAt(center);
+        this.controls.target.copy(center);
+        this.controls.update();
+      }
+
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   highlightComparison(results: VoComparisonResults) {
