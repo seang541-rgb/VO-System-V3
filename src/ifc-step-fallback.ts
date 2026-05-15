@@ -200,7 +200,7 @@ function buildStepMaterialSummary(materialId: number | null, entities: Map<numbe
     const rawName = parseRawStepString(entity.args[0]);
     const semanticName = formatMaterialSemanticName(rawName);
     if (!rawName) return 'IfcMaterial';
-    if (semanticName && semanticName.toLowerCase() != rawName.toLowerCase()) {
+    if (semanticName && semanticName.toLowerCase() !== rawName.toLowerCase()) {
       return `IfcMaterial "${semanticName}" [${rawName}]`;
     }
     return `IfcMaterial "${semanticName || rawName}"`;

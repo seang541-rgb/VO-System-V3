@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { BimComponent, BqLineItem, VoComparisonResults } from '../BimEngine';
 import type { ActiveTab, ModelLoadState } from '../lib/format';
+import type { AuditState } from './AuditPanel';
 
 interface AppSidebarProps {
   v1File: File | null;
@@ -38,7 +39,7 @@ interface AppSidebarProps {
   onExportBqTemplate: () => void;
   onTabChange: (tab: ActiveTab) => void;
   onRunAudit: () => void;
-  auditState: string;
+  auditState: AuditState;
 }
 
 export default function AppSidebar({

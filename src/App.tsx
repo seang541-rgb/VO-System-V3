@@ -20,6 +20,7 @@ import ResultsTable from './components/ResultsTable';
 import BQMappingPanel from './components/BQMappingPanel';
 import CopilotPanel from './components/CopilotPanel';
 import AuditPanel from './components/AuditPanel';
+import ViewerErrorBoundary from './components/ViewerErrorBoundary';
 import type { AuditState } from './components/AuditPanel';
 import type { AuditResult } from './audit/types';
 import toast, { Toaster } from 'react-hot-toast';
@@ -138,7 +139,7 @@ export default function App() {
     engine.onLog = (text) => setSysLog(text);
     engineRef.current = engine;
     // DEV: expose to window for console debugging (Phase 3 geometry verification).
-    if (typeof window !== 'undefined') (window as unknown as Record<string, unknown>).__engine = engine;
+    if (import.meta.env.DEV && typeof window !== 'undefined') (window as unknown as Record<string, unknown>).__engine = engine;
     return engine;
   };
 
@@ -247,8 +248,8 @@ export default function App() {
             setBillingNotice({ tone: 'info', message: 'Payment succeeded, but credit sync is still pending. Refresh again in a few seconds if the new balance does not appear yet.' });
             setSysLog('Stripe Checkout returned successfully, but webhook credit sync did not finish within the polling window.');
           }
-        } catch (error: any) {
-          const message = error?.message || 'Top-up may have completed, but credit refresh failed.';
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : 'Top-up may have completed, but credit refresh failed.';
           setBillingError(message);
           setSysLog(`Stripe return refresh failed: ${message}`);
         } finally {
@@ -322,8 +323,8 @@ export default function App() {
       setActiveIfcSlot(version === 'v1' ? 'base' : 'revision');
       setSysLog(`${label} loaded: ${components.length} indexed elements.`);
       toast.success(`${label} 加载完成 · ${components.length} 构件`);
-    } catch (err: any) {
-      const message = err?.message || 'Unknown parsing error';
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown parsing error';
       setState('error');
       setError(message);
       setSysLog(`Failed to parse ${label}: ${message}`);
@@ -368,8 +369,8 @@ export default function App() {
       setBqFileName(file.name);
       setMappingError(sanitizedCount > 0 ? `${sanitizedCount} invalid BQ mappings were cleared because their units did not match the system SMM2 unit.` : '');
       setSysLog(`BQ loaded: ${items.length} contract line items ready for QS mapping.${sanitizedCount > 0 ? ` Cleared ${sanitizedCount} invalid unit-mismatch mappings.` : ''}`);
-    } catch (err: any) {
-      const message = err?.message || 'Unknown BQ import error';
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown BQ import error';
       setBqItems([]);
       setBqFileName('');
       setBqError(message);
@@ -438,8 +439,8 @@ export default function App() {
 
       try {
         engine.highlightComparison(results);
-      } catch (highlightError: any) {
-        const message = highlightError?.message || '3D highlight failed';
+      } catch (highlightError: unknown) {
+        const message = highlightError instanceof Error ? highlightError.message : '3D highlight failed';
         setSysLog(`VO Complete, but 3D highlight failed: ${message}`);
       }
 
@@ -447,8 +448,8 @@ export default function App() {
         `VO Complete: ${results.added.length} Added, ${results.deleted.length} Deleted, ${results.modified.length} Modified. Commercial: ${commercial.summary.omissions} omissions, ${commercial.summary.additions} additions. Pending rates: ${commercial.summary.pendingRateActions}. Net rated value: ${formatSignedCurrencyValue(commercial.summary.netValue)}.`,
       );
       toast.success('VO 对比完成');
-    } catch (err: any) {
-      const message = err?.message || 'Unknown comparison error';
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown comparison error';
       setVoResults(null);
       setCompareState('error');
       setCompareMessage(`Comparison failed: ${message}`);
@@ -493,8 +494,8 @@ export default function App() {
       });
       setSysLog('Premium VO Excel generated. One audit credit consumed from the secure cloud balance.');
       toast.success('Excel 已导出');
-    } catch (err: any) {
-      const message = err?.message || 'Failed to validate cloud credits.';
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to validate cloud credits.';
       setBillingError(message);
       setSysLog(`Excel export blocked: ${message}`);
     } finally {
@@ -528,8 +529,8 @@ export default function App() {
 
       setSysLog('Redirecting to Stripe Checkout for credit top-up...');
       window.location.href = url;
-    } catch (err: any) {
-      const message = err?.message || 'Failed to start Stripe Checkout.';
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to start Stripe Checkout.';
       setBillingError(message);
       setSysLog(`Stripe Checkout bootstrap failed: ${message}`);
     } finally {
@@ -565,8 +566,8 @@ export default function App() {
     }
   };
 
-  const pricingContext = buildBqMappingContext(bqItems, labelMappings);
-  const commercialBreakdown = voResults ? buildCommercialBreakdown(voResults, pricingContext) : null;
+  const pricingContext = useMemo(() => buildBqMappingContext(bqItems, labelMappings), [bqItems, labelMappings]);
+  const commercialBreakdown = useMemo(() => voResults ? buildCommercialBreakdown(voResults, pricingContext) : null, [voResults, pricingContext]);
   const safeCommercialActions = Array.isArray(commercialBreakdown?.actions)
     ? commercialBreakdown.actions.filter((action): action is VoCommercialAction => Boolean(action?.component))
     : [];
@@ -772,15 +773,26 @@ export default function App() {
     const bulkEligibleLabels = [...new Set(bulkEligibleRows.map((row) => row.label))];
     const bulkEligibleInstanceCount = bulkEligibleRows.reduce((sum, row) => sum + row.instanceCount, 0);
 
-    if (!options?.skipBulkPrompt && item && bulkEligibleLabels.length > 1 && typeof window !== 'undefined') {
-      const shouldBulkLock = window.confirm(
-        `Detected ${bulkEligibleInstanceCount} matching model instances across ${bulkEligibleLabels.length} compatible QS descriptions. Apply ${item.itemReference} to all of them now?`,
+    if (!options?.skipBulkPrompt && item && bulkEligibleLabels.length > 1) {
+      toast(
+        (t) => (
+          <div className="text-sm">
+            <p className="font-semibold text-slate-100">Bulk Mapping</p>
+            <p className="mt-1 text-slate-300">
+              Detected {bulkEligibleInstanceCount} matching instances across {bulkEligibleLabels.length} compatible QS descriptions. Apply <span className="font-mono text-blue-300">{item.itemReference}</span> to all?
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button type="button" className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-500" onClick={() => {
+                applyLabels(bulkEligibleLabels);
+                setSysLog(`Bulk lock applied: ${item.itemReference} mounted to ${bulkEligibleLabels.length} QS descriptions covering ${bulkEligibleInstanceCount} model instances.`);
+                toast.dismiss(t.id);
+              }}>Apply All</button>
+              <button type="button" className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700" onClick={() => toast.dismiss(t.id)}>Skip</button>
+            </div>
+          </div>
+        ),
+        { duration: 15000, style: { background: '#1e293b', border: '1px solid #334155', maxWidth: '400px' } },
       );
-      if (shouldBulkLock) {
-        applyLabels(bulkEligibleLabels);
-        setSysLog(`Bulk lock applied: ${item.itemReference} mounted to ${bulkEligibleLabels.length} QS descriptions covering ${bulkEligibleInstanceCount} model instances.`);
-        return;
-      }
     }
 
     applyLabels([label]);
@@ -858,8 +870,8 @@ export default function App() {
     runCompare: runCompareForAgent,
     getActiveIfcHandle: () => {
       const handle = engineRef.current?.getIfcHandle() ?? null;
-      // DEV ONLY: expose to window for console debugging. Remove before production.
-      if (typeof window !== 'undefined') (window as unknown as Record<string, unknown>).__ifcHandle = handle;
+      // DEV ONLY: expose to window for console debugging.
+      if (import.meta.env.DEV && typeof window !== 'undefined') (window as unknown as Record<string, unknown>).__ifcHandle = handle;
       return handle;
     },
     activeIfcSlot,
@@ -905,19 +917,21 @@ export default function App() {
 
       <div className="flex flex-col">
         <div className={showOverviewTab ? '' : 'hidden'}>
-          <ModelViewer
-            containerRef={containerRef}
-            sysLog={sysLog}
-            v1File={v1File} v2File={v2File}
-            v1State={v1State} v2State={v2State}
-            v1Components={v1Components} v2Components={v2Components}
-            v1Error={v1Error} v2Error={v2Error}
-            bqFileName={bqFileName} bqItems={bqItems}
-            bqError={bqError} mappingError={mappingError}
-            compareMessage={compareMessage}
-            onResetCamera={() => engineRef.current?.resetCamera()}
-            onToggleClipping={() => engineRef.current?.toggleClipping()}
-          />
+          <ViewerErrorBoundary>
+            <ModelViewer
+              containerRef={containerRef}
+              sysLog={sysLog}
+              v1File={v1File} v2File={v2File}
+              v1State={v1State} v2State={v2State}
+              v1Components={v1Components} v2Components={v2Components}
+              v1Error={v1Error} v2Error={v2Error}
+              bqFileName={bqFileName} bqItems={bqItems}
+              bqError={bqError} mappingError={mappingError}
+              compareMessage={compareMessage}
+              onResetCamera={() => engineRef.current?.resetCamera()}
+              onToggleClipping={() => engineRef.current?.toggleClipping()}
+            />
+          </ViewerErrorBoundary>
         </div>
 
         {showOverviewTab ? (
