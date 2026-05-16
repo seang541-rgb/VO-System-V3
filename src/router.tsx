@@ -3,10 +3,7 @@ import AppLayout from './layouts/AppLayout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ProjectWorkspace from './pages/ProjectWorkspace';
-
-function SettingsPlaceholder() {
-  return <div className="p-8 text-slate-300">Settings — coming in Task 10</div>;
-}
+import SettingsPage from './pages/SettingsPage';
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -17,7 +14,7 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="/dashboard" replace /> },
       { path: 'dashboard', element: <DashboardPage /> },
       { path: 'project/:projectId', element: <ProjectWorkspace /> },
-      { path: 'settings', element: <SettingsPlaceholder /> },
+      { path: 'settings', element: <SettingsPage /> },
     ],
   },
 ]);
