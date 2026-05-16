@@ -885,9 +885,8 @@ export default function App() {
       <AppHeader
         creditsBalance={creditsBalance}
         creditsLoading={creditsLoading}
-        showLegacyBanner={showLegacyBanner}
-        onCloseBanner={() => setShowLegacyBanner(false)}
-        onSignOut={signOut}
+        plan="free"
+        onSignOut={() => void signOut()}
       />
       {/* Hidden file inputs (triggered from sidebar buttons) */}
       <input ref={v1InputRef} type="file" className="hidden" accept=".ifc,.IFC,application/octet-stream" onChange={(e) => handleIFCUpload(e, 'v1')} disabled={isRunning} />
