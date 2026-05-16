@@ -28,8 +28,8 @@ npm run test:watch # Vitest watch mode
 ## Architecture
 ```
 src/
-  main.tsx              # Entry: StrictMode > ErrorBoundary > AuthProvider > App
-  App.tsx               # Main orchestrator — state, file uploads, comparison, audit
+  main.tsx              # Entry: StrictMode > ErrorBoundary > AuthProvider > RouterProvider
+  router.tsx            # React Router v7 route definitions
   BimEngine.ts          # IFC loading via web-ifc, getIfcHandle() for audit
   vo-diff-core.ts       # VO comparison engine
   vo-report.ts          # Excel export logic
@@ -38,6 +38,9 @@ src/
   lib/
     format.ts           # ActiveTab type, formatting utilities
     supabase.ts         # Supabase client singleton
+    plan-limits.ts      # PlanName type, getPlanLimits(), formatStorageSize()
+    storage.ts          # Supabase Storage helpers
+    i18n.ts             # react-i18next config (zh/en/ms)
   auth/
     AuthProvider.tsx     # Supabase auth context
   audit/
@@ -59,15 +62,38 @@ src/
     AuditPanel.tsx       # Audit report: idle/running/done/error states
     AuthGuard.tsx        # Login gate
     CopilotPanel.tsx     # AI copilot chat interface
+    CreateProjectModal.tsx  # New project dialog
     ErrorBoundary.tsx    # React 19 compatible error boundary
     KPIGrid.tsx          # Dashboard KPI cards
+    LanguageSwitcher.tsx # i18n language selector
     ModelViewer.tsx      # Three.js 3D model viewer
+    PlanBadge.tsx        # Coloured plan label (free/pro/enterprise)
     ResultsTable.tsx     # VO comparison results table
     BQMappingPanel.tsx   # BQ mapping and valuation panel
+    UpgradePrompt.tsx    # Modal shown when plan limit is reached
+  layouts/
+    AppLayout.tsx        # Authenticated shell (header + sidebar + outlet)
   pages/
     LoginPage.tsx        # Login/signup page
+    DashboardPage.tsx    # Project list (/dashboard)
+    ProjectWorkspace.tsx # IFC compare/audit workspace (/project/:id)
+    SettingsPage.tsx     # Account, subscription, language, usage (/settings)
   hooks/
     useCredits.ts        # Credit balance hook
+    useProjects.ts       # Project CRUD hook
+    useProjectFiles.ts   # Project file upload/list hook
+    useVOHistory.ts      # VO comparison history hook
+    useSubscription.ts   # User subscription + plan hook
+  locales/
+    zh/translation.json  # Chinese translations (default)
+    en/translation.json  # English translations
+    ms/translation.json  # Bahasa Melayu translations
+supabase/
+  functions/
+    create-checkout/     # Stripe one-time payment checkout session
+    create-subscription/ # Stripe subscription checkout session
+    stripe-webhook/      # Stripe webhook handler
+    agent-proxy/         # Gemini agent proxy
 ```
 
 ## Key Types
@@ -75,6 +101,32 @@ src/
 type ActiveTab = 'overview' | 'valuation' | 'copilot' | 'audit';
 type ModelLoadState = 'idle' | 'loading' | 'ready' | 'error';
 type AuditState = 'idle' | 'running' | 'done' | 'error';
+```
+
+## V2 Architecture
+
+### Routing (React Router v7)
+- `/login` → LoginPage
+- `/dashboard` → DashboardPage (project list)
+- `/project/:id` → ProjectWorkspace (evolved from V1 App.tsx)
+- `/settings` → SettingsPage
+
+### New Data Layer
+- `projects` table → `useProjects` hook
+- `project_files` table + Supabase Storage → `useProjectFiles` hook
+- `vo_comparisons` table → `useVOHistory` hook
+- `user_subscriptions` table → `useSubscription` hook
+- Plan limits: `src/lib/plan-limits.ts` (free/pro/enterprise)
+- Storage helpers: `src/lib/storage.ts`
+
+### i18n (react-i18next)
+- Languages: zh (default), en, ms
+- Translation files: `src/locales/{zh,en,ms}/translation.json`
+- Config: `src/lib/i18n.ts`
+
+### Key V2 Types
+```typescript
+type PlanName = 'free' | 'pro' | 'enterprise';
 ```
 
 ## Conventions
