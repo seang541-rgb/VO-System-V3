@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import {
   BimComponent,
   BimEngine,
@@ -9,10 +9,10 @@ import {
   VoComparisonResults,
   buildCommercialBreakdown,
 } from '../BimEngine';
+import type { ElementProperties, StoreyInfo, ElementTypeInfo } from '../BimEngine';
 import { exportVoSubstantiationWorkbook } from '../vo-report';
 import { DEFAULT_TEST_BQ_ITEMS, parseBqWorkbook, exportBqTemplateWorkbook, normalizeBqUnit, recommendBqMatches } from '../bq-tools';
 import { PROJECT_QS_OVERRIDES } from '../qs-project-config';
-import ProjectSidebar from '../components/ProjectSidebar';
 import ModelViewer from '../components/ModelViewer';
 import KPIGrid from '../components/KPIGrid';
 import ResultsTable from '../components/ResultsTable';
@@ -29,7 +29,21 @@ import { useCredits } from '../hooks/useCredits';
 import { useProjectFiles } from '../hooks/useProjectFiles';
 import type { ProjectFile } from '../hooks/useProjectFiles';
 import { useVOHistory } from '../hooks/useVOHistory';
+import { useProjects } from '../hooks/useProjects';
 import type { ToolContext } from '../agent/tools';
+import {
+  ArrowLeft,
+  Sparkles,
+  Layers3,
+  BarChart3,
+  ClipboardList,
+  FileBox,
+  Play,
+  Download,
+  Zap,
+  Loader2,
+} from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import {
   type ModelLoadState,
   type CompareState,
@@ -72,6 +86,8 @@ const CHECKOUT_CREDIT_TOP_UP_AMOUNT = 50;
 
 export default function ProjectWorkspace() {
   const { projectId } = useParams<{ projectId: string }>();
+  const { t } = useTranslation();
+
 
   const [sysLog, setSysLog] = useState('System Live. Awaiting IFC models and QS mapping.');
   const [isRunning, setIsRunning] = useState(false);
@@ -115,6 +131,15 @@ export default function ProjectWorkspace() {
   const [showPaywall, setShowPaywall] = useState(false);
   const [isStartingCheckout, setIsStartingCheckout] = useState(false);
 
+  // 3D feature state
+  const [storeys, setStoreys] = useState<StoreyInfo[]>([]);
+  const [elementTypes, setElementTypes] = useState<ElementTypeInfo[]>([]);
+  const [activeStoreyFilter, setActiveStoreyFilter] = useState<number | null>(null);
+  const [activeTypeFilter, setActiveTypeFilter] = useState<number[] | null>(null);
+  const [isMeasuring, setIsMeasuring] = useState(false);
+  const [isIsolationActive, setIsIsolationActive] = useState(false);
+  const [pickedElement, setPickedElement] = useState<ElementProperties | null>(null);
+
   // Project-scoped persistence state
   const [selectedComparisonId, setSelectedComparisonId] = useState<string | null>(null);
   const [activeBaseFile, setActiveBaseFile] = useState<ProjectFile | null>(null);
@@ -124,6 +149,9 @@ export default function ProjectWorkspace() {
   const { balance: creditsBalance, loading: creditsLoading, error: creditsError, refresh: refreshCredits, setBalance: setCreditsBalance } = useCredits(user?.id);
 
   // Project-scoped hooks
+  const { activeProjects } = useProjects(user?.id);
+  const currentProject = activeProjects.find((p) => p.id === projectId);
+  const projectName = currentProject?.name ?? 'Project';
   const projectFiles = useProjectFiles(projectId);
   const voHistory = useVOHistory(projectId);
 
@@ -166,6 +194,90 @@ export default function ProjectWorkspace() {
     if (import.meta.env.DEV && typeof window !== 'undefined') (window as unknown as Record<string, unknown>).__engine = engine;
     return engine;
   };
+
+  // Populate storey/type lists after model load
+  const refreshViewerMetadata = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    setStoreys(engine.getStoreys());
+    setElementTypes(engine.getElementTypes());
+  }, []);
+
+  const handleFilterStorey = useCallback((storeyId: number | null) => {
+    setActiveStoreyFilter(storeyId);
+    engineRef.current?.filterByStorey(storeyId);
+  }, []);
+
+  const handleFilterType = useCallback((typeCodes: number[] | null) => {
+    setActiveTypeFilter(typeCodes);
+    engineRef.current?.filterByType(typeCodes);
+  }, []);
+
+  const handleToggleMeasurement = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (isMeasuring) {
+      engine.disableMeasurement();
+      setIsMeasuring(false);
+    } else {
+      engine.disablePicking();
+      engine.enableMeasurement((distance, points) => {
+        setSysLog(`Measurement: ${distance.toFixed(3)} m between (${points[0].x.toFixed(2)}, ${points[0].y.toFixed(2)}, ${points[0].z.toFixed(2)}) and (${points[1].x.toFixed(2)}, ${points[1].y.toFixed(2)}, ${points[1].z.toFixed(2)})`);
+      });
+      setIsMeasuring(true);
+    }
+  }, [isMeasuring]);
+
+  const handleCaptureScreenshot = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    try {
+      const dataUrl = engine.captureScreenshot();
+      const link = document.createElement('a');
+      link.download = `vo-screenshot-${Date.now()}.png`;
+      link.href = dataUrl;
+      link.click();
+      setSysLog('Screenshot saved.');
+      toast.success('Screenshot exported');
+    } catch {
+      setSysLog('Screenshot capture failed.');
+    }
+  }, []);
+
+  const handleClippingHeight = useCallback((value: number) => {
+    engineRef.current?.setClippingHeight(value);
+  }, []);
+
+  const handleClearIsolation = useCallback(() => {
+    engineRef.current?.clearIsolation();
+    setIsIsolationActive(false);
+  }, []);
+
+  const handleClearMeasurements = useCallback(() => {
+    engineRef.current?.clearMeasurements();
+    engineRef.current?.disableMeasurement();
+    setIsMeasuring(false);
+  }, []);
+
+  const handleDismissPickedElement = useCallback(() => {
+    setPickedElement(null);
+  }, []);
+
+  // Enable picking by default when on 3D tab (unless measuring)
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (activeTab === 'overview' && !isMeasuring) {
+      engine.enablePicking((props) => {
+        setPickedElement(props);
+      });
+    } else {
+      engine.disablePicking();
+    }
+    return () => {
+      engine.disablePicking();
+    };
+  }, [activeTab, isMeasuring]);
 
   useEffect(() => {
     if (!engineRef.current) return;
@@ -345,6 +457,7 @@ export default function ProjectWorkspace() {
       setComponents(components);
       setState('ready');
       setActiveIfcSlot(version === 'v1' ? 'base' : 'revision');
+      refreshViewerMetadata();
       setSysLog(`${label} loaded: ${components.length} indexed elements.`);
       toast.success(`${label} 加载完成 · ${components.length} 构件`);
 
@@ -480,11 +593,14 @@ export default function ProjectWorkspace() {
       );
 
       try {
-        engine.highlightComparison(results);
+        engine.applyDiffVisualization(results);
       } catch (highlightError: unknown) {
         const message = highlightError instanceof Error ? highlightError.message : '3D highlight failed';
         setSysLog(`VO Complete, but 3D highlight failed: ${message}`);
       }
+
+      // Switch to 3D tab to show diff visualization
+      setActiveTab('overview');
 
       setSysLog(
         `VO Complete: ${results.added.length} Added, ${results.deleted.length} Deleted, ${results.modified.length} Modified. Commercial: ${commercial.summary.omissions} omissions, ${commercial.summary.additions} additions. Pending rates: ${commercial.summary.pendingRateActions}. Net rated value: ${formatSignedCurrencyValue(commercial.summary.netValue)}.`,
@@ -947,138 +1063,264 @@ export default function ProjectWorkspace() {
     activeIfcSlot,
   }), [v1Components, v2Components, voResults, bqItems, labelMappings, v1File, v2File, runCompareForAgent, activeIfcSlot]);
 
+  const canCompareForPanel = v1State === 'ready' && v2State === 'ready' && !isRunning;
+  const canAuditForPanel = (v1State === 'ready' || v2State === 'ready') && auditState !== 'running';
+
+  const tabs: { key: ActiveTab; label: string; icon: React.ReactNode; activeClass: string }[] = [
+    { key: 'copilot', label: 'Copilot', icon: <Sparkles className="h-3.5 w-3.5" />, activeClass: 'bg-blue-600 text-white' },
+    { key: 'overview', label: '3D', icon: <Layers3 className="h-3.5 w-3.5" />, activeClass: 'bg-blue-600 text-white' },
+    { key: 'audit', label: 'Audit', icon: <BarChart3 className="h-3.5 w-3.5" />, activeClass: 'bg-amber-600 text-white' },
+    { key: 'valuation', label: 'BQ', icon: <ClipboardList className="h-3.5 w-3.5" />, activeClass: 'bg-blue-600 text-white' },
+  ];
+
+  function formatComparisonDate(isoString: string): string {
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return isoString;
+    }
+  }
+
   return (
-    <div className="flex">
-      {/* Hidden file inputs (triggered from sidebar buttons) */}
+    <div className="flex h-full flex-col">
+      {/* Hidden file inputs */}
       <input ref={v1InputRef} type="file" className="hidden" accept=".ifc,.IFC,application/octet-stream" onChange={(e) => handleIFCUpload(e, 'v1')} disabled={isRunning} />
       <input ref={v2InputRef} type="file" className="hidden" accept=".ifc,.IFC,application/octet-stream" onChange={(e) => handleIFCUpload(e, 'v2')} disabled={isRunning} />
       <input ref={bqInputRef} type="file" className="hidden" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={handleBqUpload} disabled={isRunning} />
 
-      <ProjectSidebar
-        baseFile={activeBaseFile}
-        revisionFile={activeRevisionFile}
-        baseState={v1State}
-        revisionState={v2State}
-        baseComponentCount={v1Components.length}
-        revisionComponentCount={v2Components.length}
-        bqFileName={bqFileName}
-        bqItemCount={bqItems.length}
-        voResults={voResults}
-        isRunning={isRunning}
-        isExporting={isExporting}
-        activeTab={activeTab}
-        auditState={auditState}
-        comparisons={voHistory.comparisons}
-        selectedComparisonId={selectedComparisonId}
-        onUploadBase={() => v1InputRef.current?.click()}
-        onUploadRevision={() => v2InputRef.current?.click()}
-        onUploadBq={() => bqInputRef.current?.click()}
-        onRunCompare={runVOComparison}
-        onExportExcel={exportWorkbook}
-        onExportBqTemplate={exportBqTemplateWorkbook}
-        onTabChange={setActiveTab}
-        onRunAudit={runAudit}
-        onSelectComparison={handleSelectComparison}
-      />
+      {/* Top toolbar */}
+      <div className="flex h-12 shrink-0 items-center border-b border-slate-700 bg-slate-900 px-4">
+        <Link
+          to="/dashboard"
+          className="flex items-center gap-2 text-slate-400 transition-colors hover:text-white"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
+        <span className="ml-3 text-sm font-medium text-white truncate max-w-[180px]">{projectName}</span>
 
-      <main className="min-w-0 flex-1 overflow-x-hidden">
-        <div className="flex flex-col">
-          <div className={showOverviewTab ? '' : 'hidden'}>
-            <ViewerErrorBoundary>
-              <ModelViewer
-                containerRef={containerRef}
-                sysLog={sysLog}
-                v1File={v1File} v2File={v2File}
-                v1State={v1State} v2State={v2State}
-                v1Components={v1Components} v2Components={v2Components}
-                v1Error={v1Error} v2Error={v2Error}
-                bqFileName={bqFileName} bqItems={bqItems}
-                bqError={bqError} mappingError={mappingError}
-                compareMessage={compareMessage}
-                onResetCamera={() => engineRef.current?.resetCamera()}
-                onToggleClipping={() => engineRef.current?.toggleClipping()}
-              />
-            </ViewerErrorBoundary>
-          </div>
+        <div className="flex-1" />
 
-          {showOverviewTab ? (
-            showReportPanel ? (
-              <div className="flex flex-col border-t border-slate-700 bg-slate-900">
-                <div className="border-b border-slate-800 bg-slate-800 p-3 text-xs font-bold uppercase tracking-widest text-blue-400">VO Variation Results</div>
-                {compareState === 'error' ? (
-                  <div className="m-4 rounded border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-200">{compareMessage}</div>
-                ) : (
-                  <>
-                    <KPIGrid
-                      totalChanges={totalChanges}
-                      totalCommercialOmissions={totalCommercialOmissions}
-                      totalCommercialAdditions={totalCommercialAdditions}
-                      totalNetValue={totalNetValue}
-                      totalPendingRates={totalPendingRates}
-                      totalProtectedValue={totalProtectedValue}
-                      rawModified={voResults?.modified.length ?? 0}
-                      totalRatedActions={totalRatedActions}
-                      totalHighRiskQuantityItems={totalHighRiskQuantityItems}
-                      mappedLabelCount={mappedLabelCount}
-                      mappingCandidatesCount={mappingCandidates.length}
-                      contractBqCount={contractBqCount}
-                      totalFormworkAlerts={totalFormworkAlerts}
-                      totalStarRateCandidates={totalStarRateCandidates}
-                      totalEotFlags={totalEotFlags}
-                    />
-                    <ResultsTable
-                      resultRows={resultRows}
-                      selectedRowKey={selectedRowKey}
-                      onRowClick={focusCommercialAction}
-                      scrollRef={resultsTableScrollRef}
-                      scrollbarRef={resultsScrollbarRef}
-                      scrollbarInnerRef={resultsScrollbarInnerRef}
-                    />
-                  </>
-                )}
-              </div>
-            ) : null
-          ) : showValuationTab ? (
-            <BQMappingPanel
-              mappingRows={mappingRows}
-              bqFileName={bqFileName}
-              bqItems={bqItems}
-              bqError={bqError}
-              mappingError={mappingError}
-              orphanRows={orphanRows}
-              orphanInstanceCount={orphanInstanceCount}
-              orphanPreview={orphanPreview}
-              mappedLabelCount={mappedLabelCount}
-              mappingCandidatesCount={mappingCandidates.length}
-              totalPendingRates={totalPendingRates}
-              contractBqCount={contractBqCount}
-              compareMessage={compareMessage}
-              onUpdateMapping={updateLabelMapping}
-              onStageDraft={stageDraftMapping}
-            />
-          ) : activeTab === 'audit' ? (
-            <AuditPanel
-              auditResult={auditResult}
-              auditState={auditState}
-              auditError={auditError}
-              auditDurationMs={auditDurationMs}
-              onRunAudit={runAudit}
-              canRun={v1State === 'ready' || v2State === 'ready'}
-            />
-          ) : (
-            <div className="flex flex-col border-t border-slate-700 bg-slate-900 px-4 py-4 lg:px-6">
-              <div className="min-h-[36rem]">
-                <CopilotPanel
-                  toolContext={agentToolContext}
-                  signedIn={!!user}
-                  onCreditsUpdate={(balance) => setCreditsBalance(balance)}
-                />
-              </div>
-            </div>
-          )}
+        {/* View tabs */}
+        <div className="flex gap-1 rounded-xl bg-slate-800 p-1">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                activeTab === tab.key
+                  ? tab.activeClass
+                  : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
         </div>
-      </main>
 
+        <div className="flex-1" />
+      </div>
+
+      {/* Content + Panel */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Main content */}
+        <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="flex flex-col">
+            <div className={showOverviewTab ? '' : 'hidden'}>
+              <ViewerErrorBoundary>
+                <ModelViewer
+                  containerRef={containerRef}
+                  sysLog={sysLog}
+                  v1File={v1File} v2File={v2File}
+                  v1State={v1State} v2State={v2State}
+                  v1Components={v1Components} v2Components={v2Components}
+                  v1Error={v1Error} v2Error={v2Error}
+                  bqFileName={bqFileName} bqItems={bqItems}
+                  bqError={bqError} mappingError={mappingError}
+                  compareMessage={compareMessage}
+                  onResetCamera={() => engineRef.current?.resetCamera()}
+                  onToggleClipping={() => engineRef.current?.toggleClipping()}
+                  storeys={storeys}
+                  elementTypes={elementTypes}
+                  activeStoreyFilter={activeStoreyFilter}
+                  activeTypeFilter={activeTypeFilter}
+                  isMeasuring={isMeasuring}
+                  isIsolationActive={isIsolationActive}
+                  pickedElement={pickedElement}
+                  onFilterStorey={handleFilterStorey}
+                  onFilterType={handleFilterType}
+                  onToggleMeasurement={handleToggleMeasurement}
+                  onCaptureScreenshot={handleCaptureScreenshot}
+                  onClippingHeight={handleClippingHeight}
+                  onClearIsolation={handleClearIsolation}
+                  onClearMeasurements={handleClearMeasurements}
+                  onDismissPickedElement={handleDismissPickedElement}
+                />
+              </ViewerErrorBoundary>
+            </div>
+
+            {showOverviewTab ? (
+              showReportPanel ? (
+                <div className="flex flex-col border-t border-slate-700 bg-slate-900">
+                  <div className="border-b border-slate-800 bg-slate-800 p-3 text-xs font-bold uppercase tracking-widest text-blue-400">VO Variation Results</div>
+                  {compareState === 'error' ? (
+                    <div className="m-4 rounded border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-200">{compareMessage}</div>
+                  ) : (
+                    <>
+                      <KPIGrid
+                        totalChanges={totalChanges}
+                        totalCommercialOmissions={totalCommercialOmissions}
+                        totalCommercialAdditions={totalCommercialAdditions}
+                        totalNetValue={totalNetValue}
+                        totalPendingRates={totalPendingRates}
+                        totalProtectedValue={totalProtectedValue}
+                        rawModified={voResults?.modified.length ?? 0}
+                        totalRatedActions={totalRatedActions}
+                        totalHighRiskQuantityItems={totalHighRiskQuantityItems}
+                        mappedLabelCount={mappedLabelCount}
+                        mappingCandidatesCount={mappingCandidates.length}
+                        contractBqCount={contractBqCount}
+                        totalFormworkAlerts={totalFormworkAlerts}
+                        totalStarRateCandidates={totalStarRateCandidates}
+                        totalEotFlags={totalEotFlags}
+                      />
+                      <ResultsTable
+                        resultRows={resultRows}
+                        selectedRowKey={selectedRowKey}
+                        onRowClick={focusCommercialAction}
+                        scrollRef={resultsTableScrollRef}
+                        scrollbarRef={resultsScrollbarRef}
+                        scrollbarInnerRef={resultsScrollbarInnerRef}
+                      />
+                    </>
+                  )}
+                </div>
+              ) : null
+            ) : showValuationTab ? (
+              <BQMappingPanel
+                mappingRows={mappingRows}
+                bqFileName={bqFileName}
+                bqItems={bqItems}
+                bqError={bqError}
+                mappingError={mappingError}
+                orphanRows={orphanRows}
+                orphanInstanceCount={orphanInstanceCount}
+                orphanPreview={orphanPreview}
+                mappedLabelCount={mappedLabelCount}
+                mappingCandidatesCount={mappingCandidates.length}
+                totalPendingRates={totalPendingRates}
+                contractBqCount={contractBqCount}
+                compareMessage={compareMessage}
+                onUpdateMapping={updateLabelMapping}
+                onStageDraft={stageDraftMapping}
+              />
+            ) : activeTab === 'audit' ? (
+              <AuditPanel
+                auditResult={auditResult}
+                auditState={auditState}
+                auditError={auditError}
+                auditDurationMs={auditDurationMs}
+                onRunAudit={runAudit}
+                canRun={v1State === 'ready' || v2State === 'ready'}
+              />
+            ) : (
+              <div className="flex flex-1 flex-col bg-slate-900">
+                {/* Centered copilot chat */}
+                <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-4">
+                  <div className="min-h-[36rem]">
+                    <CopilotPanel
+                      toolContext={agentToolContext}
+                      signedIn={!!user}
+                      onCreditsUpdate={(balance) => setCreditsBalance(balance)}
+                    />
+                  </div>
+                </div>
+
+                {/* Compact action bar */}
+                <div className="border-t border-slate-700/50 bg-slate-900/80 px-4 py-2">
+                  <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-2">
+                    {/* Base IFC */}
+                    <button
+                      type="button"
+                      onClick={() => v1InputRef.current?.click()}
+                      disabled={isRunning || v1State === 'loading'}
+                      className="flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-slate-300 transition hover:border-slate-600 hover:bg-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {v1State === 'loading' ? (
+                        <Loader2 className="h-3 w-3 animate-spin text-blue-400" />
+                      ) : v1Components.length > 0 ? (
+                        <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                      ) : (
+                        <FileBox className="h-3 w-3 text-slate-500" />
+                      )}
+                      {v1File ? <span className="max-w-[120px] truncate">{v1File.name}</span> : 'Upload Base'}
+                    </button>
+
+                    {/* Revision IFC */}
+                    <button
+                      type="button"
+                      onClick={() => v2InputRef.current?.click()}
+                      disabled={isRunning || v2State === 'loading'}
+                      className="flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-slate-300 transition hover:border-slate-600 hover:bg-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {v2State === 'loading' ? (
+                        <Loader2 className="h-3 w-3 animate-spin text-blue-400" />
+                      ) : v2Components.length > 0 ? (
+                        <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                      ) : (
+                        <FileBox className="h-3 w-3 text-slate-500" />
+                      )}
+                      {v2File ? <span className="max-w-[120px] truncate">{v2File.name}</span> : 'Upload Revision'}
+                    </button>
+
+                    {/* Run Audit */}
+                    <button
+                      type="button"
+                      onClick={runAudit}
+                      disabled={!canAuditForPanel}
+                      className="flex items-center gap-1.5 rounded-full bg-amber-600/90 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {auditState === 'running' ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Zap className="h-3 w-3" />
+                      )}
+                      {auditState === 'running' ? 'Auditing...' : 'Run Audit'}
+                    </button>
+
+                    {/* Run Compare */}
+                    <button
+                      type="button"
+                      onClick={runVOComparison}
+                      disabled={!canCompareForPanel}
+                      className="flex items-center gap-1.5 rounded-full bg-blue-600/90 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Play className="h-3 w-3" />
+                      Run Compare
+                    </button>
+
+                    {/* Export Excel */}
+                    <button
+                      type="button"
+                      onClick={exportWorkbook}
+                      disabled={!voResults || isExporting}
+                      className="flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-slate-300 transition hover:border-slate-600 hover:bg-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Download className="h-3 w-3" />
+                      {isExporting ? 'Exporting...' : 'Export Excel'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
+
+      </div>
+
+      {/* Floating notifications */}
       {billingNotice && (
         <div className={`fixed bottom-4 right-4 z-50 max-w-sm rounded-2xl border px-4 py-3 text-sm shadow-xl ${billingNotice.tone === 'success' ? 'border-emerald-900/70 bg-emerald-950/90 text-emerald-200' : 'border-blue-900/70 bg-blue-950/90 text-blue-200'}`}>
           {billingNotice.message}

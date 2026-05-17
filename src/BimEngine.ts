@@ -39,6 +39,7 @@ import {
   IFCCABLECARRIERSEGMENT,
   IFCEQUIPMENTELEMENT,
   IFCOPENINGELEMENT,
+  IFCBUILDINGSTOREY,
 } from 'web-ifc';
 import {
   BimAttributeValue,
@@ -53,6 +54,28 @@ import { STEP_SUPPORTED_TYPE_NAMES, buildFallbackProps, buildStepMaterialMap, bu
 
 export { buildCommercialBreakdown } from './vo-diff-core';
 export type { BimFieldChange, BimComponent, ModifiedBimComponent, VoComparisonResults, VoCommercialAction, VoCommercialBreakdown, BqLineItem, BqMappingContext } from './vo-diff-core';
+
+export interface ElementProperties {
+  expressId: number;
+  ifcType: string;
+  name: string;
+  globalId: string;
+  storey: string;
+  properties: Record<string, string>;
+  quantities: Record<string, string>;
+}
+
+export interface StoreyInfo {
+  id: number;
+  name: string;
+  elevation: number;
+}
+
+export interface ElementTypeInfo {
+  typeCode: number;
+  name: string;
+  count: number;
+}
 
 const SUPPORTED_ELEMENT_TYPES = [
   IFCWALL,
@@ -225,6 +248,31 @@ export class BimEngine {
   ifcLoader: IFCLoader;
   ifcModel: any = null;
   onLog?: (text: string) => void;
+
+  // Feature state: diff visualization
+  private originalMaterials = new Map<number, THREE.Material | THREE.Material[]>();
+  private diffActive = false;
+
+  // Feature state: storey filtering
+  private storeyMap = new Map<number, number[]>(); // storeyExpressID -> element expressIDs
+  private storeyList: StoreyInfo[] = [];
+
+  // Feature state: element type filtering
+  private expressIdToType = new Map<number, number>(); // expressID -> IFC type code
+
+  // Feature state: picking
+  private pickHandler: ((event: MouseEvent) => void) | null = null;
+  private pickCallback: ((props: ElementProperties | null) => void) | null = null;
+
+  // Feature state: isolation
+  private isolationActive = false;
+  private isolationOriginalMaterials = new Map<number, THREE.Material | THREE.Material[]>();
+
+  // Feature state: measurement
+  private measureHandler: ((event: MouseEvent) => void) | null = null;
+  private measureCallback: ((distance: number, points: [THREE.Vector3, THREE.Vector3]) => void) | null = null;
+  private measureFirstPoint: THREE.Vector3 | null = null;
+  private measureObjects: THREE.Object3D[] = [];
 
   /**
    * Public handle for the raw web-ifc API + the currently-loaded model ID.
@@ -1075,6 +1123,636 @@ export class BimEngine {
     }
     if (modifiedIds.length > 0) {
       manager.createSubset({ modelID, ids: modifiedIds, material: this.matModified, removePrevious: true, customID: 'vo_modified' });
+    }
+  }
+
+  // ─── Feature 1: Enhanced VO Diff Visualization ─────────────────────
+
+  applyDiffVisualization(results: VoComparisonResults) {
+    if (!this.ifcModel) return;
+
+    // Clear previous diff state first
+    this.clearDiffVisualization();
+
+    const addedIds = new Set(results.added.map((c) => c.expressID));
+    const deletedIds = new Set(results.deleted.map((c) => c.expressID));
+    const modifiedIds = new Set(results.modified.map((m) => m.rev.expressID));
+
+    const matDiffAdded = new THREE.MeshLambertMaterial({ color: 0x22c55e, opacity: 0.85, transparent: true, side: THREE.DoubleSide });
+    const matDiffDeleted = new THREE.MeshLambertMaterial({ color: 0xef4444, opacity: 0.85, transparent: true, side: THREE.DoubleSide });
+    const matDiffModified = new THREE.MeshLambertMaterial({ color: 0xf59e0b, opacity: 0.85, transparent: true, side: THREE.DoubleSide });
+    const matDiffNeutral = new THREE.MeshLambertMaterial({ color: 0xd7dee6, opacity: 0.15, transparent: true, side: THREE.DoubleSide });
+
+    this.ifcModel.traverse((child: THREE.Object3D) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) return;
+
+      const expressID = (mesh as unknown as Record<string, unknown>).expressID as number | undefined
+        ?? (mesh.geometry?.attributes?.expressID ? undefined : undefined);
+
+      // Try to get expressID from geometry subset data or userData
+      const eid = expressID ?? (mesh.userData?.expressID as number | undefined);
+      if (eid == null) {
+        // For non-IFC meshes, just make them transparent
+        this.originalMaterials.set(mesh.id, Array.isArray(mesh.material) ? [...mesh.material] : mesh.material);
+        mesh.material = matDiffNeutral;
+        return;
+      }
+
+      this.originalMaterials.set(mesh.id, Array.isArray(mesh.material) ? [...mesh.material] : mesh.material);
+
+      if (addedIds.has(eid)) {
+        mesh.material = matDiffAdded;
+      } else if (deletedIds.has(eid)) {
+        mesh.material = matDiffDeleted;
+      } else if (modifiedIds.has(eid)) {
+        mesh.material = matDiffModified;
+      } else {
+        mesh.material = matDiffNeutral;
+      }
+    });
+
+    this.diffActive = true;
+
+    // Also use subset API for highlighting (more reliable with web-ifc-three)
+    this.highlightComparison(results);
+  }
+
+  clearDiffVisualization() {
+    if (!this.diffActive || !this.ifcModel) return;
+
+    this.ifcModel.traverse((child: THREE.Object3D) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const original = this.originalMaterials.get(mesh.id);
+      if (original) {
+        mesh.material = original;
+      }
+    });
+
+    this.originalMaterials.clear();
+    this.diffActive = false;
+
+    // Remove subsets
+    if (this.ifcModel) {
+      const manager = this.ifcLoader.ifcManager;
+      const modelID = this.ifcModel.modelID;
+      try {
+        manager.removeSubset(modelID, this.matAdded, 'vo_added');
+        manager.removeSubset(modelID, this.matModified, 'vo_modified');
+        manager.removeSubset(modelID, this.matFocused, 'vo_focus');
+      } catch {
+        // Ignore missing subsets
+      }
+    }
+  }
+
+  // ─── Feature 2: Storey Filtering ───────────────────────────────────
+
+  getStoreys(): StoreyInfo[] {
+    if (!this.ifcModel) return [];
+    if (this.storeyList.length > 0) return this.storeyList;
+
+    const handle = this.getIfcHandle();
+    if (!handle) return [];
+    const { api, modelID } = handle;
+
+    try {
+      const storeyIds = api.GetLineIDsWithType(modelID, IFCBUILDINGSTOREY);
+      if (!storeyIds) return [];
+
+      const idList: number[] = [];
+      if (Array.isArray(storeyIds)) {
+        idList.push(...storeyIds);
+      } else if (typeof storeyIds.size === 'function') {
+        for (let i = 0; i < storeyIds.size(); i++) {
+          idList.push(storeyIds.get(i));
+        }
+      }
+
+      for (const storeyId of idList) {
+        try {
+          const line = api.GetLine(modelID, storeyId);
+          const name = normalizeIfcText(line?.Name) || normalizeIfcText(line?.LongName) || `Storey #${storeyId}`;
+          const elevation = (() => {
+            const val = unwrapIfcValue(line?.Elevation);
+            return typeof val === 'number' && Number.isFinite(val) ? val : 0;
+          })();
+          this.storeyList.push({ id: storeyId, name, elevation });
+        } catch {
+          // skip broken storey
+        }
+      }
+
+      this.storeyList.sort((a, b) => a.elevation - b.elevation);
+
+      // Build storey -> expressIDs mapping via IFCRELCONTAINEDINSPATIALSTRUCTURE
+      const IFCRELCONTAINED = 3242617779; // IFCRELCONTAINEDINSPATIALSTRUCTURE
+      try {
+        const relIds = api.GetLineIDsWithType(modelID, IFCRELCONTAINED);
+        if (!relIds) return this.storeyList;
+
+        const relIdList: number[] = [];
+        if (Array.isArray(relIds)) {
+          relIdList.push(...relIds);
+        } else if (typeof relIds.size === 'function') {
+          for (let i = 0; i < relIds.size(); i++) {
+            relIdList.push(relIds.get(i));
+          }
+        }
+
+        const storeyIdSet = new Set(this.storeyList.map((s) => s.id));
+        for (const relId of relIdList) {
+          try {
+            const rel = api.GetLine(modelID, relId);
+            const structureId = readIfcRef(rel?.RelatingStructure);
+            if (structureId == null || !storeyIdSet.has(structureId)) continue;
+
+            const elementIds = readIfcRefList(rel?.RelatedElements);
+            const existing = this.storeyMap.get(structureId) ?? [];
+            existing.push(...elementIds);
+            this.storeyMap.set(structureId, existing);
+          } catch {
+            // skip broken relation
+          }
+        }
+      } catch {
+        // relation walk failed
+      }
+
+      return this.storeyList;
+    } catch {
+      return [];
+    }
+  }
+
+  filterByStorey(storeyId: number | null) {
+    if (!this.ifcModel) return;
+
+    if (storeyId === null) {
+      // Show all
+      this.ifcModel.traverse((child: THREE.Object3D) => {
+        child.visible = true;
+      });
+      return;
+    }
+
+    const allowedIds = new Set(this.storeyMap.get(storeyId) ?? []);
+    if (allowedIds.size === 0) return;
+
+    const manager = this.ifcLoader.ifcManager;
+    const modelID = this.ifcModel.modelID;
+
+    // Use subset approach: create a subset for the storey elements
+    try {
+      manager.removeSubset(modelID, undefined, 'vo_storey_filter');
+    } catch {
+      // ignore
+    }
+
+    // Toggle visibility on the model traversal
+    this.ifcModel.traverse((child: THREE.Object3D) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) return;
+
+      const eid = (mesh as unknown as Record<string, unknown>).expressID as number | undefined
+        ?? (mesh.userData?.expressID as number | undefined);
+
+      if (eid != null) {
+        mesh.visible = allowedIds.has(eid);
+      }
+    });
+  }
+
+  // ─── Feature 3: Element Type Filtering ─────────────────────────────
+
+  getElementTypes(): ElementTypeInfo[] {
+    if (!this.ifcModel) return [];
+
+    const handle = this.getIfcHandle();
+    if (!handle) return [];
+    const { api, modelID } = handle;
+
+    const typeCounts = new Map<number, { name: string; count: number }>();
+
+    for (const typeCode of SUPPORTED_ELEMENT_TYPES) {
+      try {
+        const ids = api.GetLineIDsWithType(modelID, typeCode);
+        if (!ids) continue;
+        let count = 0;
+        const idList: number[] = [];
+        if (Array.isArray(ids)) {
+          count = ids.length;
+          idList.push(...ids);
+        } else if (typeof ids.size === 'function') {
+          count = ids.size();
+          for (let i = 0; i < count; i++) {
+            idList.push(ids.get(i));
+          }
+        }
+        if (count > 0) {
+          const name = getSafeIfcTypeName(api, typeCode, 'IfcElement');
+          typeCounts.set(typeCode, { name, count });
+          // Cache expressID -> typeCode mapping
+          for (const eid of idList) {
+            this.expressIdToType.set(eid, typeCode);
+          }
+        }
+      } catch {
+        // skip
+      }
+    }
+
+    return [...typeCounts.entries()]
+      .map(([typeCode, info]) => ({ typeCode, name: info.name, count: info.count }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  filterByType(typeCodes: number[] | null) {
+    if (!this.ifcModel) return;
+
+    if (typeCodes === null) {
+      // Show all
+      this.ifcModel.traverse((child: THREE.Object3D) => {
+        child.visible = true;
+      });
+      return;
+    }
+
+    const allowedTypes = new Set(typeCodes);
+
+    // Build set of allowed expressIDs from cached type mapping
+    const allowedIds = new Set<number>();
+    for (const [eid, tc] of this.expressIdToType.entries()) {
+      if (allowedTypes.has(tc)) allowedIds.add(eid);
+    }
+
+    this.ifcModel.traverse((child: THREE.Object3D) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) return;
+
+      const eid = (mesh as unknown as Record<string, unknown>).expressID as number | undefined
+        ?? (mesh.userData?.expressID as number | undefined);
+
+      if (eid != null) {
+        mesh.visible = allowedIds.has(eid);
+      }
+    });
+  }
+
+  // ─── Feature 4: Click to View Properties ───────────────────────────
+
+  enablePicking(callback: (props: ElementProperties | null) => void) {
+    this.disablePicking();
+    this.pickCallback = callback;
+
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    this.pickHandler = (event: MouseEvent) => {
+      if (!this.ifcModel || !this.pickCallback) return;
+
+      const rect = this.renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, this.camera);
+      const intersects = raycaster.intersectObject(this.ifcModel, true);
+
+      if (intersects.length === 0) {
+        this.pickCallback(null);
+        return;
+      }
+
+      const hit = intersects[0];
+      const faceIndex = hit.faceIndex;
+      if (faceIndex == null) {
+        this.pickCallback(null);
+        return;
+      }
+
+      // Try to get expressID from the geometry
+      const mesh = hit.object as THREE.Mesh;
+      const geometry = mesh.geometry;
+      let expressId: number | undefined;
+
+      // web-ifc-three stores expressIDs in a buffer attribute
+      const expressIDAttr = geometry.attributes?.expressID;
+      if (expressIDAttr) {
+        expressId = expressIDAttr.getX(faceIndex * 3);
+      }
+
+      if (expressId == null) {
+        expressId = (mesh as unknown as Record<string, unknown>).expressID as number | undefined
+          ?? (mesh.userData?.expressID as number | undefined);
+      }
+
+      if (expressId == null) {
+        this.pickCallback(null);
+        return;
+      }
+
+      // Highlight picked element
+      this.focusOnExpressId(expressId);
+
+      // Get properties
+      const handle = this.getIfcHandle();
+      if (!handle) {
+        this.pickCallback({ expressId, ifcType: '', name: '', globalId: '', storey: '', properties: {}, quantities: {} });
+        return;
+      }
+
+      const { api, modelID } = handle;
+      try {
+        const line = api.GetLine(modelID, expressId, false, true);
+        const ifcType = getSafeIfcTypeName(api, line?.type, 'IfcElement');
+        const name = normalizeIfcText(line?.Name);
+        const globalId = normalizeIfcText(line?.GlobalId);
+
+        // Get storey
+        let storey = '';
+        const storeys = this.getStoreys();
+        for (const s of storeys) {
+          const ids = this.storeyMap.get(s.id);
+          if (ids?.includes(expressId)) {
+            storey = s.name;
+            break;
+          }
+        }
+
+        // Get property sets
+        const properties: Record<string, string> = {};
+        const quantities: Record<string, string> = {};
+
+        const definitionIds = new Set<number>();
+        readIfcRefList(line?.IsDefinedBy)
+          .map((relId: number) => { try { return api.GetLine(modelID, relId); } catch { return null; } })
+          .filter((rel: unknown): rel is Record<string, unknown> => rel != null && getSafeIfcTypeName(api, (rel as Record<string, unknown>)?.type) === 'IfcRelDefinesByProperties')
+          .forEach((rel: Record<string, unknown>) => {
+            const defId = readIfcRef(rel.RelatingPropertyDefinition);
+            if (defId !== null) definitionIds.add(defId);
+          });
+
+        for (const defId of definitionIds) {
+          try {
+            const def = api.GetLine(modelID, defId);
+            const defType = getSafeIfcTypeName(api, def?.type, 'IfcPropertyDefinition');
+            const defName = normalizeIfcText(def?.Name) || defType;
+
+            if (defType === 'IfcPropertySet') {
+              readIfcRefList(def?.HasProperties).forEach((propId: number) => {
+                try {
+                  const prop = api.GetLine(modelID, propId);
+                  const propName = normalizeIfcText(prop?.Name);
+                  const propValue = normalizeIfcText(prop?.NominalValue);
+                  if (propName && propValue) {
+                    properties[`${defName}.${propName}`] = propValue;
+                  }
+                } catch {
+                  // skip
+                }
+              });
+            }
+
+            if (defType === 'IfcElementQuantity') {
+              readIfcRefList(def?.Quantities).forEach((qId: number) => {
+                try {
+                  const q = api.GetLine(modelID, qId);
+                  const qName = normalizeIfcText(q?.Name);
+                  const qVal = this.readQuantityValue(q);
+                  if (qName && qVal) {
+                    quantities[`${defName}.${qName}`] = `${qVal.value.toFixed(4)} ${qVal.unit}`;
+                  }
+                } catch {
+                  // skip
+                }
+              });
+            }
+          } catch {
+            // skip broken definition
+          }
+        }
+
+        this.pickCallback({ expressId, ifcType, name, globalId, storey, properties, quantities });
+      } catch {
+        this.pickCallback({ expressId, ifcType: '', name: '', globalId: '', storey: '', properties: {}, quantities: {} });
+      }
+    };
+
+    this.renderer.domElement.addEventListener('click', this.pickHandler);
+  }
+
+  disablePicking() {
+    if (this.pickHandler) {
+      this.renderer.domElement.removeEventListener('click', this.pickHandler);
+      this.pickHandler = null;
+    }
+    this.pickCallback = null;
+  }
+
+  // ─── Feature 5: Transparency / Isolation Mode ─────────────────────
+
+  isolateElements(expressIds: number[]) {
+    if (!this.ifcModel) return;
+    this.clearIsolation();
+
+    const isolatedSet = new Set(expressIds);
+    const matIsolateHighlight = new THREE.MeshLambertMaterial({ color: 0x38bdf8, opacity: 0.95, transparent: true, side: THREE.DoubleSide });
+    const matIsolateGhost = new THREE.MeshLambertMaterial({ color: 0xd7dee6, opacity: 0.08, transparent: true, side: THREE.DoubleSide });
+
+    this.ifcModel.traverse((child: THREE.Object3D) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) return;
+
+      this.isolationOriginalMaterials.set(mesh.id, Array.isArray(mesh.material) ? [...mesh.material] : mesh.material);
+
+      const eid = (mesh as unknown as Record<string, unknown>).expressID as number | undefined
+        ?? (mesh.userData?.expressID as number | undefined);
+
+      if (eid != null && isolatedSet.has(eid)) {
+        mesh.material = matIsolateHighlight;
+      } else {
+        mesh.material = matIsolateGhost;
+      }
+    });
+
+    this.isolationActive = true;
+  }
+
+  clearIsolation() {
+    if (!this.isolationActive || !this.ifcModel) return;
+
+    this.ifcModel.traverse((child: THREE.Object3D) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const original = this.isolationOriginalMaterials.get(mesh.id);
+      if (original) {
+        mesh.material = original;
+      }
+    });
+
+    this.isolationOriginalMaterials.clear();
+    this.isolationActive = false;
+  }
+
+  // ─── Feature 6: Measurement Tool ──────────────────────────────────
+
+  enableMeasurement(callback: (distance: number, points: [THREE.Vector3, THREE.Vector3]) => void) {
+    this.disableMeasurement();
+    this.measureCallback = callback;
+    this.measureFirstPoint = null;
+
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    this.measureHandler = (event: MouseEvent) => {
+      if (!this.ifcModel || !this.measureCallback) return;
+
+      const rect = this.renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, this.camera);
+      const intersects = raycaster.intersectObject(this.ifcModel, true);
+      if (intersects.length === 0) return;
+
+      const point = intersects[0].point.clone();
+
+      if (!this.measureFirstPoint) {
+        // First click: place marker
+        this.measureFirstPoint = point;
+        const sphere = new THREE.Mesh(
+          new THREE.SphereGeometry(0.08, 16, 16),
+          new THREE.MeshBasicMaterial({ color: 0x3b82f6 }),
+        );
+        sphere.position.copy(point);
+        sphere.name = 'measure-marker';
+        this.scene.add(sphere);
+        this.measureObjects.push(sphere);
+      } else {
+        // Second click: complete measurement
+        const start = this.measureFirstPoint;
+        const end = point;
+
+        // Place second marker
+        const sphere2 = new THREE.Mesh(
+          new THREE.SphereGeometry(0.08, 16, 16),
+          new THREE.MeshBasicMaterial({ color: 0x3b82f6 }),
+        );
+        sphere2.position.copy(end);
+        sphere2.name = 'measure-marker';
+        this.scene.add(sphere2);
+        this.measureObjects.push(sphere2);
+
+        // Draw dashed line
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints([start, end]);
+        const lineMaterial = new THREE.LineDashedMaterial({
+          color: 0x3b82f6,
+          dashSize: 0.15,
+          gapSize: 0.08,
+          linewidth: 1,
+        });
+        const line = new THREE.Line(lineGeometry, lineMaterial);
+        line.computeLineDistances();
+        line.name = 'measure-line';
+        this.scene.add(line);
+        this.measureObjects.push(line);
+
+        // Distance text sprite
+        const distance = start.distanceTo(end);
+        const midpoint = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
+        const sprite = this.createTextSprite(`${distance.toFixed(3)} m`);
+        sprite.position.copy(midpoint);
+        sprite.position.y += 0.2;
+        sprite.name = 'measure-label';
+        this.scene.add(sprite);
+        this.measureObjects.push(sprite);
+
+        this.measureCallback(distance, [start, end]);
+        this.measureFirstPoint = null;
+      }
+    };
+
+    this.renderer.domElement.addEventListener('click', this.measureHandler);
+  }
+
+  disableMeasurement() {
+    if (this.measureHandler) {
+      this.renderer.domElement.removeEventListener('click', this.measureHandler);
+      this.measureHandler = null;
+    }
+    this.measureCallback = null;
+    this.measureFirstPoint = null;
+  }
+
+  clearMeasurements() {
+    for (const obj of this.measureObjects) {
+      this.scene.remove(obj);
+      if ((obj as THREE.Mesh).geometry) {
+        (obj as THREE.Mesh).geometry.dispose();
+      }
+    }
+    this.measureObjects = [];
+    this.measureFirstPoint = null;
+  }
+
+  private createTextSprite(text: string): THREE.Sprite {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+    canvas.width = 256;
+    canvas.height = 64;
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    ctx.roundRect(0, 0, canvas.width, canvas.height, 8);
+    ctx.fill();
+    ctx.font = 'bold 28px monospace';
+    ctx.fillStyle = '#38bdf8';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(1.5, 0.375, 1);
+    return sprite;
+  }
+
+  // ─── Feature 7: Screenshot Export ──────────────────────────────────
+
+  captureScreenshot(): string {
+    // Re-render trick since preserveDrawingBuffer is not set
+    this.renderer.render(this.scene, this.camera);
+    return this.renderer.domElement.toDataURL('image/png');
+  }
+
+  captureScreenshotBlob(): Promise<Blob> {
+    this.renderer.render(this.scene, this.camera);
+    return new Promise((resolve, reject) => {
+      this.renderer.domElement.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error('Failed to capture screenshot blob'));
+        }
+      }, 'image/png');
+    });
+  }
+
+  // ─── Feature 8: Draggable Clipping Plane ──────────────────────────
+
+  setClippingHeight(normalizedValue: number) {
+    if (!this.ifcModel) return;
+
+    const box = new THREE.Box3().setFromObject(this.ifcModel);
+    if (box.isEmpty()) return;
+
+    const clamped = Math.max(0, Math.min(1, normalizedValue));
+    const yValue = box.min.y + (box.max.y - box.min.y) * clamped;
+    this.globalClipPlane.constant = yValue;
+
+    // Ensure clipping is enabled
+    if (!this.clippingEnabled) {
+      this.toggleClipping();
     }
   }
 }

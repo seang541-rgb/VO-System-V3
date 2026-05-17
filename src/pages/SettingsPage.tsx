@@ -1,4 +1,6 @@
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '../auth/AuthProvider';
 import { useSubscription } from '../hooks/useSubscription';
 import { useCredits } from '../hooks/useCredits';
@@ -19,7 +21,16 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
-      <h1 className="text-lg font-semibold text-white">{t('settings.title')}</h1>
+      {/* Slim top bar with back button */}
+      <div className="flex items-center gap-3">
+        <Link
+          to="/dashboard"
+          className="flex items-center justify-center rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+        >
+          <ArrowLeft size={16} />
+        </Link>
+        <h1 className="text-lg font-semibold text-white">{t('settings.title')}</h1>
+      </div>
 
       {/* Account */}
       <section className="rounded-2xl border border-slate-700 bg-slate-800/60 p-6 space-y-3">

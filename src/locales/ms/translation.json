@@ -102,6 +102,18 @@
     "noCredits": "Kredit tidak mencukupi",
     "topUp": "Tambah Kredit"
   },
+  "welcome": {
+    "title": "Apa yang boleh saya bantu?",
+    "subtitle": "Platform Analisis IFC Pintar",
+    "cardAudit": "Audit Kuantiti Pantas",
+    "cardAuditDesc": "Pengukuran Kuantiti IFC",
+    "cardCompare": "Perbandingan VO",
+    "cardCompareDesc": "Perbezaan Perintah Variasi",
+    "cardCopilot": "AI Copilot",
+    "cardCopilotDesc": "Agen Analisis Pintar",
+    "cardExport": "Eksport Laporan",
+    "cardExportDesc": "Eksport Excel & PDF"
+  },
   "toast": {
     "projectCreated": "Projek dicipta",
     "projectArchived": "Projek diarkibkan",

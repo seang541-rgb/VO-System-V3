@@ -102,6 +102,18 @@
     "noCredits": "Insufficient credits",
     "topUp": "Top Up Credits"
   },
+  "welcome": {
+    "title": "What can I help with?",
+    "subtitle": "IFC Smart Analysis Platform",
+    "cardAudit": "Quick Quantity Audit",
+    "cardAuditDesc": "IFC Quantity Takeoff",
+    "cardCompare": "VO Comparison",
+    "cardCompareDesc": "Variation Order Diff",
+    "cardCopilot": "AI Copilot",
+    "cardCopilotDesc": "Smart Analysis Agent",
+    "cardExport": "Export Report",
+    "cardExportDesc": "Excel & PDF Export"
+  },
   "toast": {
     "projectCreated": "Project created",
     "projectArchived": "Project archived",

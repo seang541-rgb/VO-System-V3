@@ -102,6 +102,18 @@
     "noCredits": "积分不足",
     "topUp": "充值积分"
   },
+  "welcome": {
+    "title": "你好！需要什么帮助？",
+    "subtitle": "IFC 智能分析平台",
+    "cardAudit": "快速算量审计",
+    "cardAuditDesc": "IFC 工程量提取",
+    "cardCompare": "VO 对比分析",
+    "cardCompareDesc": "变更单差异比对",
+    "cardCopilot": "AI Copilot",
+    "cardCopilotDesc": "智能分析助手",
+    "cardExport": "导出报告",
+    "cardExportDesc": "Excel 和 PDF 导出"
+  },
   "toast": {
     "projectCreated": "项目已创建",
     "projectArchived": "项目已归档",
