@@ -436,6 +436,7 @@ export default function App() {
       setVoResults(results);
       setSelectedRowKey(null);
       setCompareState('success');
+      setActiveTab('overview');
       const commercial = buildCommercialBreakdown(results, buildBqMappingContext(bqItems, labelMappings));
       setCompareMessage(
         `Comparison complete. Raw: ${results.modified.length} modified. Commercial: ${commercial.summary.omissions} omissions, ${commercial.summary.additions} additions. Pending rates: ${commercial.summary.pendingRateActions}. Net rated value: ${formatSignedCurrencyValue(commercial.summary.netValue)}. Protected value: ${formatCurrencyValue(results.qsSummary.protectedValue)}.`,
