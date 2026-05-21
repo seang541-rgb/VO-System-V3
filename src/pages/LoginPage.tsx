@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
 import { useAuth } from '../auth/AuthProvider';
+import { useLang } from '../i18n/LanguageContext';
 
 export default function LoginPage() {
   const { signIn, signUp, resetPassword } = useAuth();
+  const { t } = useLang();
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -41,27 +43,26 @@ export default function LoginPage() {
       <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
         <section className="space-y-6 rounded-[2rem] border border-slate-700/50 bg-slate-900/70 p-8 shadow-[0_20px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl lg:p-10">
           <div className="inline-flex items-center gap-3 rounded-full border border-blue-600/20 bg-blue-600/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-blue-400">
-            <ShieldCheck size={14} /> Zero Data Upload BIM Audit
+            <ShieldCheck size={14} /> {t('login.badge')}
           </div>
           <div className="space-y-4">
             <h1 className="max-w-2xl text-4xl font-black leading-tight text-white lg:text-5xl">
-              Cloud-metered VO commercial auditing, local IFC parsing, no model upload.
+              {t('login.heading')}
             </h1>
             <p className="max-w-2xl text-base leading-7 text-slate-400 lg:text-lg">
-              Your IFC stays inside the browser. Only authentication and credit enforcement go to Supabase.
-              This keeps the BIM workflow local while making the premium audit meter tamper-resistant.
+              {t('login.description')}
             </p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-2xl border border-slate-700/50 bg-slate-800/70 p-5">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Commercial Output</div>
-              <div className="mt-3 text-xl font-bold text-white">Star Rate Build-up + VO Excel</div>
-              <div className="mt-2 text-sm leading-6 text-slate-400">Generate defensible omission/addition reports without moving the IFC off the machine.</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{t('login.outputTitle')}</div>
+              <div className="mt-3 text-xl font-bold text-white">{t('login.outputSubtitle')}</div>
+              <div className="mt-2 text-sm leading-6 text-slate-400">{t('login.outputDescription')}</div>
             </div>
             <div className="rounded-2xl border border-slate-700/50 bg-slate-800/70 p-5">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Credit Meter</div>
-              <div className="mt-3 text-xl font-bold text-white">20 free premium audits</div>
-              <div className="mt-2 text-sm leading-6 text-slate-400">Every premium Excel export is checked against the cloud balance before the local download runs.</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{t('login.creditsTitle')}</div>
+              <div className="mt-3 text-xl font-bold text-white">{t('login.creditsSubtitle')}</div>
+              <div className="mt-2 text-sm leading-6 text-slate-400">{t('login.creditsDescription')}</div>
             </div>
           </div>
         </section>
@@ -69,8 +70,8 @@ export default function LoginPage() {
         <section className="rounded-[2rem] border border-slate-700/50 bg-slate-900/80 p-8 shadow-[0_24px_90px_rgba(2,6,23,0.55)] backdrop-blur-xl lg:p-10">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <div className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">Secure Access</div>
-              <h2 className="mt-2 text-3xl font-black text-white">{mode === 'forgot' ? 'Reset password' : mode === 'login' ? 'Sign in' : 'Create account'}</h2>
+              <div className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">{t('login.secureAccess')}</div>
+              <h2 className="mt-2 text-3xl font-black text-white">{mode === 'forgot' ? t('login.modeForgot') : mode === 'login' ? t('login.modeLogin') : t('login.modeSignup')}</h2>
             </div>
             {mode !== 'forgot' && (
               <div className="inline-flex rounded-2xl border border-slate-700/50 bg-slate-800 p-1 text-sm">
@@ -79,14 +80,14 @@ export default function LoginPage() {
                   className={`rounded-xl px-4 py-2 font-semibold transition ${mode === 'login' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
                   onClick={() => setMode('login')}
                 >
-                  Login
+                  {t('login.tabLogin')}
                 </button>
                 <button
                   type="button"
                   className={`rounded-xl px-4 py-2 font-semibold transition ${mode === 'signup' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}
                   onClick={() => setMode('signup')}
                 >
-                  Sign up
+                  {t('login.tabSignup')}
                 </button>
               </div>
             )}
@@ -94,13 +95,13 @@ export default function LoginPage() {
 
           <form className="mt-8 space-y-5" onSubmit={submit}>
             <label className="block space-y-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Email</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{t('login.email')}</span>
               <input
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 className="w-full rounded-2xl border border-slate-700/50 bg-slate-800/80 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500/60 focus:ring-2 focus:ring-blue-600/20"
-                placeholder="you@company.com"
+                placeholder={t('login.emailPlaceholder')}
                 autoComplete="email"
                 required
               />
@@ -108,13 +109,13 @@ export default function LoginPage() {
 
             {mode !== 'forgot' && (
               <label className="block space-y-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Password</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{t('login.password')}</span>
                 <input
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   className="w-full rounded-2xl border border-slate-700/50 bg-slate-800/80 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500/60 focus:ring-2 focus:ring-blue-600/20"
-                  placeholder="Minimum 6 characters"
+                  placeholder={t('login.passwordPlaceholder')}
                   autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                   minLength={6}
                   required
@@ -128,7 +129,7 @@ export default function LoginPage() {
                 className="text-xs text-blue-400 hover:text-blue-300 transition"
                 onClick={() => { setMode('forgot'); setError(''); setMessage(''); }}
               >
-                Forgot password?
+                {t('login.forgotPassword')}
               </button>
             )}
 
@@ -138,7 +139,7 @@ export default function LoginPage() {
                 className="text-xs text-slate-400 hover:text-slate-200 transition"
                 onClick={() => { setMode('login'); setError(''); setMessage(''); }}
               >
-                ← Back to login
+                {t('login.backToLogin')}
               </button>
             )}
 
@@ -151,7 +152,7 @@ export default function LoginPage() {
               className={`flex w-full items-center justify-center gap-3 rounded-2xl px-5 py-3 text-sm font-black tracking-[0.16em] uppercase transition ${mode === 'signup' ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-blue-600 hover:bg-blue-500'} ${submitting ? 'cursor-not-allowed opacity-60' : 'text-white'}`}
             >
               {submitting ? <RefreshCw size={16} className="animate-spin" /> : <Sparkles size={16} />}
-              {submitting ? 'Processing' : mode === 'forgot' ? 'Send Reset Link' : mode === 'login' ? 'Enter Workspace' : 'Create Workspace Account'}
+              {submitting ? t('login.processing') : mode === 'forgot' ? t('login.btnForgot') : mode === 'login' ? t('login.btnLogin') : t('login.btnSignup')}
             </button>
           </form>
         </section>

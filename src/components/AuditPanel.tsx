@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Loader2, Zap, ChevronDown, ChevronUp, AlertCircle, BarChart3 } from 'lucide-react';
 import type { AuditResult } from '../audit/types';
+import { useLang } from '../i18n/LanguageContext';
 
 export type AuditState = 'idle' | 'running' | 'done' | 'error';
 
@@ -38,6 +39,7 @@ function ElapsedTimer({ running }: { running: boolean }) {
 }
 
 export default function AuditPanel({ auditResult, auditState, auditError, auditDurationMs, onRunAudit, canRun }: AuditPanelProps) {
+  const { t } = useLang();
   const [showClassifications, setShowClassifications] = useState(false);
   const [showSources, setShowSources] = useState(false);
 
@@ -47,8 +49,8 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
       <div className="flex flex-col items-center justify-center gap-6 px-6 py-20">
         <BarChart3 className="h-12 w-12 text-slate-600" />
         <div className="text-center">
-          <div className="text-lg font-bold text-slate-300">Quantity Takeoff Report</div>
-          <div className="mt-2 text-sm text-slate-500">上传 IFC 文件后点击「Run Audit」即可快速生成算量报告</div>
+          <div className="text-lg font-bold text-slate-300">{t('audit.title')}</div>
+          <div className="mt-2 text-sm text-slate-500">{t('audit.instruction')}</div>
         </div>
         <button
           type="button"
@@ -56,7 +58,7 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
           disabled={!canRun}
           className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <Zap className="h-4 w-4" /> Run Audit
+          <Zap className="h-4 w-4" /> {t('audit.runButton')}
         </button>
       </div>
     );
@@ -68,8 +70,8 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
       <div className="flex flex-col items-center justify-center gap-6 px-6 py-20">
         <Loader2 className="h-10 w-10 animate-spin text-blue-400" />
         <div className="text-center">
-          <div className="text-lg font-bold text-blue-300">正在算量…</div>
-          <div className="mt-2 text-sm text-slate-500">解析 IFC 构件、计算体积面积、SMM2 分类中</div>
+          <div className="text-lg font-bold text-blue-300">{t('audit.running')}</div>
+          <div className="mt-2 text-sm text-slate-500">{t('audit.processing')}</div>
           <div className="mt-3 text-3xl font-bold">
             <ElapsedTimer running />
           </div>
@@ -84,7 +86,7 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
       <div className="flex flex-col items-center justify-center gap-6 px-6 py-20">
         <AlertCircle className="h-10 w-10 text-red-400" />
         <div className="text-center">
-          <div className="text-lg font-bold text-red-300">算量失败</div>
+          <div className="text-lg font-bold text-red-300">{t('audit.errorTitle')}</div>
           <div className="mt-2 max-w-md text-sm text-red-400">{auditError}</div>
         </div>
         <button
@@ -93,7 +95,7 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
           disabled={!canRun}
           className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <Zap className="h-4 w-4" /> Retry
+          <Zap className="h-4 w-4" /> {t('audit.retry')}
         </button>
       </div>
     );
@@ -116,9 +118,9 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
         <div className="flex items-center gap-3">
           <Zap className="h-5 w-5 text-amber-400" />
           <div>
-            <div className="text-sm font-bold uppercase tracking-[0.18em] text-amber-400">算量报告 · Quantity Takeoff Report</div>
+            <div className="text-sm font-bold uppercase tracking-[0.18em] text-amber-400">{t('audit.reportLabel')}</div>
             <div className="text-[11px] text-slate-400">
-              {summary.recordCount} 构件 · 算量完成 · 耗时 {durationSec}s
+              {t('audit.completeMsg', { count: String(summary.recordCount), duration: durationSec })}
             </div>
           </div>
         </div>
@@ -127,26 +129,26 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
       {/* KPI Grid */}
       <div className="border-b border-slate-800 px-4 py-3">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-          <KPI label="审计构件数" value={summary.recordCount} accent="text-white" />
-          <KPI label="JKR 分类数" value={summary.jkrCodeCount} accent="text-blue-300" />
-          <KPI label="算量模式" value={quantityModeUsed === 'compat' ? 'Qto Priority' : quantityModeUsed === 'mesh' ? 'Mesh' : quantityModeUsed} accent="text-emerald-300" />
-          <KPI label="耗时" value={`${durationSec}s`} accent="text-amber-300" />
-          <KPI label="Qto 覆盖率" value={`${qtoCoverage}%`} accent={qtoCoverage >= 70 ? 'text-emerald-300' : qtoCoverage >= 40 ? 'text-amber-300' : 'text-red-300'} />
+          <KPI label={t('audit.elementCount')} value={summary.recordCount} accent="text-white" />
+          <KPI label={t('audit.jkrCount')} value={summary.jkrCodeCount} accent="text-blue-300" />
+          <KPI label={t('audit.quantityMode')} value={quantityModeUsed === 'compat' ? t('audit.modeQto') : quantityModeUsed === 'mesh' ? t('audit.modeMesh') : quantityModeUsed} accent="text-emerald-300" />
+          <KPI label={t('audit.duration')} value={`${durationSec}s`} accent="text-amber-300" />
+          <KPI label={t('audit.qtoCoverage')} value={`${qtoCoverage}%`} accent={qtoCoverage >= 70 ? 'text-emerald-300' : qtoCoverage >= 40 ? 'text-amber-300' : 'text-red-300'} />
         </div>
       </div>
 
       {/* Main BQ Table */}
       <div className="px-4 py-4">
-        <div className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-blue-400">BQ 算量汇总</div>
+        <div className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-blue-400">{t('audit.bqSummary')}</div>
         <div className="overflow-auto rounded-xl border border-slate-700">
           <table className="w-full border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-slate-700/60 bg-slate-800/80 text-xs uppercase tracking-[0.18em] text-slate-500">
-                <th className="px-4 py-2.5 font-bold">JKR Code</th>
-                <th className="px-4 py-2.5 font-bold">Description</th>
-                <th className="px-4 py-2.5 font-bold">Unit</th>
-                <th className="px-4 py-2.5 font-bold text-right">Net Quantity</th>
-                <th className="px-4 py-2.5 font-bold text-right">Elements</th>
+                <th className="px-4 py-2.5 font-bold">{t('audit.jkrCode')}</th>
+                <th className="px-4 py-2.5 font-bold">{t('audit.description')}</th>
+                <th className="px-4 py-2.5 font-bold">{t('audit.unit')}</th>
+                <th className="px-4 py-2.5 font-bold text-right">{t('audit.netQuantity')}</th>
+                <th className="px-4 py-2.5 font-bold text-right">{t('audit.elements')}</th>
               </tr>
             </thead>
             <tbody className="font-mono text-slate-300">
@@ -160,7 +162,7 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
                 </tr>
               ))}
               {bqRows.length === 0 && (
-                <tr><td colSpan={5} className="py-6 text-center text-slate-500">No audit records produced.</td></tr>
+                <tr><td colSpan={5} className="py-6 text-center text-slate-500">{t('audit.noRecords')}</td></tr>
               )}
             </tbody>
           </table>
@@ -174,7 +176,7 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
           onClick={() => setShowClassifications(!showClassifications)}
           className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs font-bold uppercase tracking-[0.16em] text-slate-400 hover:bg-slate-800 hover:text-slate-200"
         >
-          <span>分类详情 · Classifications ({summary.classifications.length})</span>
+          <span>{t('audit.classifications', { count: String(summary.classifications.length) })}</span>
           {showClassifications ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
         </button>
         {showClassifications && (
@@ -182,12 +184,12 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
             <table className="w-full border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-700/60 bg-slate-800/80 text-xs uppercase tracking-[0.14em] text-slate-500">
-                  <th className="px-3 py-2 font-bold">Classification</th>
-                  <th className="px-3 py-2 font-bold">JKR Code</th>
-                  <th className="px-3 py-2 font-bold">Element Group</th>
-                  <th className="px-3 py-2 font-bold text-right">Count</th>
-                  <th className="px-3 py-2 font-bold text-right">Net Volume (m³)</th>
-                  <th className="px-3 py-2 font-bold text-right">Net Area (m²)</th>
+                  <th className="px-3 py-2 font-bold">{t('audit.classification')}</th>
+                  <th className="px-3 py-2 font-bold">{t('audit.jkrCode')}</th>
+                  <th className="px-3 py-2 font-bold">{t('audit.elementGroup')}</th>
+                  <th className="px-3 py-2 font-bold text-right">{t('audit.count')}</th>
+                  <th className="px-3 py-2 font-bold text-right">{t('audit.netVolume')}</th>
+                  <th className="px-3 py-2 font-bold text-right">{t('audit.netArea')}</th>
                 </tr>
               </thead>
               <tbody className="font-mono text-slate-300">
@@ -214,7 +216,7 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
           onClick={() => setShowSources(!showSources)}
           className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs font-bold uppercase tracking-[0.16em] text-slate-400 hover:bg-slate-800 hover:text-slate-200"
         >
-          <span>数据源分析 · Quantity Sources ({summary.quantitySources.length})</span>
+          <span>{t('audit.quantitySources', { count: String(summary.quantitySources.length) })}</span>
           {showSources ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
         </button>
         {showSources && (
@@ -222,9 +224,9 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
             <table className="w-full border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-700/60 bg-slate-800/80 text-xs uppercase tracking-[0.14em] text-slate-500">
-                  <th className="px-3 py-2 font-bold">Source</th>
-                  <th className="px-3 py-2 font-bold text-right">Count</th>
-                  <th className="px-3 py-2 font-bold text-right">Net Volume (m³)</th>
+                  <th className="px-3 py-2 font-bold">{t('audit.source')}</th>
+                  <th className="px-3 py-2 font-bold text-right">{t('audit.count')}</th>
+                  <th className="px-3 py-2 font-bold text-right">{t('audit.netVolume')}</th>
                 </tr>
               </thead>
               <tbody className="font-mono text-slate-300">

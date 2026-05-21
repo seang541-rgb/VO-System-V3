@@ -27,6 +27,7 @@ import toast, { Toaster } from 'react-hot-toast';
 import { useAuth } from './auth/AuthProvider';
 import { supabase } from './lib/supabase';
 import { useCredits } from './hooks/useCredits';
+import { useLang } from './i18n/LanguageContext';
 import type { ToolContext } from './agent/tools';
 import {
   type ModelLoadState,
@@ -64,6 +65,7 @@ const CHECKOUT_BALANCE_STORAGE_KEY = 'vo-system:checkout-balance';
 const CHECKOUT_CREDIT_TOP_UP_AMOUNT = 50;
 
 export default function App() {
+  const { t } = useLang();
   const [sysLog, setSysLog] = useState('System Live. Awaiting IFC models and QS mapping.');
   const [isRunning, setIsRunning] = useState(false);
   const [v1File, setV1File] = useState<File | null>(null);
@@ -75,7 +77,7 @@ export default function App() {
   const [v1Error, setV1Error] = useState('');
   const [v2Error, setV2Error] = useState('');
   const [bqItems, setBqItems] = useState<BqLineItem[]>(DEFAULT_TEST_BQ_ITEMS);
-  const [bqFileName, setBqFileName] = useState('Built-in Test BQ Library');
+  const [bqFileName, setBqFileName] = useState('');
   const [bqError, setBqError] = useState('');
   const [mappingError, setMappingError] = useState('');
   const [labelMappings, setLabelMappings] = useState<Record<string, string>>(() => {
@@ -287,8 +289,9 @@ export default function App() {
 
     if (file.size > MAX_IFC_SIZE) {
       const setErr = version === 'v1' ? setV1Error : setV2Error;
-      setErr(`文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，上限 100MB`);
-      toast.error(`文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，上限 100MB`);
+      const sizeMsg = t('sys.fileTooLarge', { size: (file.size / 1024 / 1024).toFixed(1) });
+      setErr(sizeMsg);
+      toast.error(sizeMsg);
       e.target.value = '';
       return;
     }
@@ -299,7 +302,7 @@ export default function App() {
     const setComponents = version === 'v1' ? setV1Components : setV2Components;
     const setState = version === 'v1' ? setV1State : setV2State;
     const setError = version === 'v1' ? setV1Error : setV2Error;
-    const label = version === 'v1' ? 'V1 Base' : 'V2 Revision';
+    const label = version === 'v1' ? t('misc.v1Base') : t('misc.v2Revision');
 
     setFile(file);
     setComponents([]);
@@ -309,7 +312,7 @@ export default function App() {
 
     const engine = ensureEngine();
     if (!engine) {
-      const message = '3D engine is not ready yet. Refresh the page and try again.';
+      const message = t('sys.engineNotReady');
       setState('error');
       setError(message);
       setSysLog(`Failed to parse ${label}: ${message}`);
@@ -326,13 +329,13 @@ export default function App() {
       setState('ready');
       setActiveIfcSlot(version === 'v1' ? 'base' : 'revision');
       setSysLog(`${label} loaded: ${components.length} indexed elements.`);
-      toast.success(`${label} 加载完成 · ${components.length} 构件`);
+      toast.success(t('toast.loadSuccess', { label, count: String(components.length) }));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown parsing error';
       setState('error');
       setError(message);
       setSysLog(`Failed to parse ${label}: ${message}`);
-      toast.error(`${label} 加载失败`);
+      toast.error(t('toast.loadFailed', { label }));
     }
 
     e.target.value = '';
@@ -389,7 +392,7 @@ export default function App() {
     if (!engine) return;
     const handle = engine.getIfcHandle();
     if (!handle) {
-      setAuditError('IFC engine not ready. Load an IFC file first.');
+      setAuditError(t('sys.auditNotReady'));
       setAuditState('error');
       return;
     }
@@ -406,14 +409,14 @@ export default function App() {
       setAuditResult(result);
       setAuditState('done');
       setSysLog(`Audit complete: ${result.records.length} elements in ${(duration / 1000).toFixed(1)}s`);
-      toast.success(`算量完成 · ${result.records.length} 构件 · ${(duration / 1000).toFixed(1)}s`);
+      toast.success(t('toast.auditComplete', { count: String(result.records.length), duration: (duration / 1000).toFixed(1) }));
     } catch (err) {
       setAuditDurationMs(performance.now() - t0);
       const message = err instanceof Error ? err.message : String(err);
       setAuditError(message);
       setAuditState('error');
       setSysLog(`Audit failed: ${message}`);
-      toast.error(`算量失败: ${message}`);
+      toast.error(t('toast.auditFailed', { message }));
     }
   }, []);
 
@@ -452,14 +455,14 @@ export default function App() {
       setSysLog(
         `VO Complete: ${results.added.length} Added, ${results.deleted.length} Deleted, ${results.modified.length} Modified. Commercial: ${commercial.summary.omissions} omissions, ${commercial.summary.additions} additions. Pending rates: ${commercial.summary.pendingRateActions}. Net rated value: ${formatSignedCurrencyValue(commercial.summary.netValue)}.`,
       );
-      toast.success('VO 对比完成');
+      toast.success(t('toast.voComplete'));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown comparison error';
       setVoResults(null);
       setCompareState('error');
       setCompareMessage(`Comparison failed: ${message}`);
       setSysLog(`VO Analysis Failed: ${message}`);
-      toast.error('VO 对比失败');
+      toast.error(t('toast.voFailed'));
     }
 
     setIsRunning(false);
@@ -498,7 +501,7 @@ export default function App() {
         pricingContext: buildBqMappingContext(bqItems, labelMappings),
       });
       setSysLog('Premium VO Excel generated. One audit credit consumed from the secure cloud balance.');
-      toast.success('Excel 已导出');
+      toast.success(t('toast.excelExported'));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to validate cloud credits.';
       setBillingError(message);
@@ -780,19 +783,19 @@ export default function App() {
 
     if (!options?.skipBulkPrompt && item && bulkEligibleLabels.length > 1) {
       toast(
-        (t) => (
+        (toastRef) => (
           <div className="text-sm">
-            <p className="font-semibold text-slate-100">Bulk Mapping</p>
+            <p className="font-semibold text-slate-100">{t('bulk.title')}</p>
             <p className="mt-1 text-slate-300">
-              Detected {bulkEligibleInstanceCount} matching instances across {bulkEligibleLabels.length} compatible QS descriptions. Apply <span className="font-mono text-blue-300">{item.itemReference}</span> to all?
+              {t('bulk.message', { instanceCount: String(bulkEligibleInstanceCount), labelCount: String(bulkEligibleLabels.length), reference: item.itemReference })}
             </p>
             <div className="mt-3 flex gap-2">
               <button type="button" className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-500" onClick={() => {
                 applyLabels(bulkEligibleLabels);
                 setSysLog(`Bulk lock applied: ${item.itemReference} mounted to ${bulkEligibleLabels.length} QS descriptions covering ${bulkEligibleInstanceCount} model instances.`);
-                toast.dismiss(t.id);
-              }}>Apply All</button>
-              <button type="button" className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700" onClick={() => toast.dismiss(t.id)}>Skip</button>
+                toast.dismiss(toastRef.id);
+              }}>{t('bulk.applyAll')}</button>
+              <button type="button" className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700" onClick={() => toast.dismiss(toastRef.id)}>{t('bulk.skip')}</button>
             </div>
           </div>
         ),
@@ -942,7 +945,7 @@ export default function App() {
         {showOverviewTab ? (
           showReportPanel ? (
             <div className="flex flex-col border-t border-slate-700 bg-slate-900">
-              <div className="border-b border-slate-800 bg-slate-800 p-3 text-xs font-bold uppercase tracking-widest text-blue-400">VO Variation Results</div>
+              <div className="border-b border-slate-800 bg-slate-800 p-3 text-xs font-bold uppercase tracking-widest text-blue-400">{t('vo.resultsTitle')}</div>
               {compareState === "error" ? (
                 <div className="m-4 rounded border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-200">{compareMessage}</div>
               ) : (
@@ -1030,17 +1033,17 @@ export default function App() {
       )}
       {creditsError && (
         <div className="mx-6 mt-4 rounded-2xl border border-amber-900/70 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
-          Failed to refresh credits: {creditsError}
+          {t('toast.creditsRefreshed', { error: creditsError })}
         </div>
       )}
       {showPaywall && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 px-6 backdrop-blur-sm">
           <div className="w-full max-w-2xl rounded-[2rem] border border-slate-700 bg-slate-900/95 p-8 shadow-[0_30px_120px_rgba(2,6,23,0.75)]">
-            <div className="text-xs font-semibold uppercase tracking-[0.28em] text-red-300">Premium Audit Paywall</div>
-            <h2 className="mt-4 text-3xl font-black text-white">Your 20 Free Premium Audits are Exhausted.</h2>
-            <p className="mt-4 max-w-xl text-base leading-7 text-slate-400">Unlock the full Star Rate Build-up and VO Commercial Report to claim your RM 50,000+ profit.</p>
+            <div className="text-xs font-semibold uppercase tracking-[0.28em] text-red-300">{t('paywall.label')}</div>
+            <h2 className="mt-4 text-3xl font-black text-white">{t('paywall.title')}</h2>
+            <p className="mt-4 max-w-xl text-base leading-7 text-slate-400">{t('paywall.message')}</p>
             <div className="mt-6 rounded-2xl border border-slate-700 bg-slate-800/70 px-4 py-4 text-sm text-slate-300">
-              Current balance: <span className="font-black text-white">{creditsBalance ?? 0}</span> premium audits
+              {t('paywall.balance')} <span className="font-black text-white">{creditsBalance ?? 0}</span> {t('paywall.unit')}
             </div>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <button
@@ -1049,14 +1052,14 @@ export default function App() {
                 onClick={handleTopUpCheckout}
                 disabled={isStartingCheckout || !user}
               >
-                {isStartingCheckout ? 'Redirecting...' : 'Top Up 50 Credits - RM 499'}
+                {isStartingCheckout ? t('paywall.redirecting') : t('paywall.topUp')}
               </button>
               <button
                 type="button"
                 className="rounded-2xl border border-slate-600 bg-slate-800 px-5 py-4 text-sm font-semibold text-slate-300 transition hover:bg-slate-700 hover:text-white"
                 onClick={() => setShowPaywall(false)}
               >
-                Close
+                {t('paywall.close')}
               </button>
             </div>
           </div>
@@ -1065,20 +1068,20 @@ export default function App() {
       {passwordRecovery && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 px-6 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-[2rem] border border-slate-700 bg-slate-900/95 p-8 shadow-[0_30px_120px_rgba(2,6,23,0.75)]">
-            <div className="text-xs font-semibold uppercase tracking-[0.28em] text-blue-400">Password Recovery</div>
-            <h2 className="mt-4 text-2xl font-black text-white">Set New Password</h2>
-            <p className="mt-2 text-sm text-slate-400">Enter your new password below.</p>
+            <div className="text-xs font-semibold uppercase tracking-[0.28em] text-blue-400">{t('password.label')}</div>
+            <h2 className="mt-4 text-2xl font-black text-white">{t('password.title')}</h2>
+            <p className="mt-2 text-sm text-slate-400">{t('password.hint')}</p>
             <form
               className="mt-6 space-y-4"
               onSubmit={async (e) => {
                 e.preventDefault();
                 setPasswordError('');
                 if (newPassword.length < 6) {
-                  setPasswordError('Password must be at least 6 characters.');
+                  setPasswordError(t('password.tooShort'));
                   return;
                 }
                 if (newPassword !== confirmPassword) {
-                  setPasswordError('Passwords do not match.');
+                  setPasswordError(t('password.mismatch'));
                   return;
                 }
                 setPasswordUpdating(true);
@@ -1086,7 +1089,7 @@ export default function App() {
                   await updatePassword(newPassword);
                   setNewPassword('');
                   setConfirmPassword('');
-                  toast.success('Password updated successfully!');
+                  toast.success(t('password.success'));
                 } catch (err: unknown) {
                   setPasswordError(err instanceof Error ? err.message : 'Failed to update password.');
                 } finally {
@@ -1095,25 +1098,25 @@ export default function App() {
               }}
             >
               <label className="block space-y-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">New Password</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{t('password.newPassword')}</span>
                 <input
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   className="w-full rounded-2xl border border-slate-700/50 bg-slate-800/80 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500/60 focus:ring-2 focus:ring-blue-600/20"
-                  placeholder="Minimum 6 characters"
+                  placeholder={t('password.newPlaceholder')}
                   minLength={6}
                   required
                 />
               </label>
               <label className="block space-y-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Confirm Password</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{t('password.confirmPassword')}</span>
                 <input
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="w-full rounded-2xl border border-slate-700/50 bg-slate-800/80 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500/60 focus:ring-2 focus:ring-blue-600/20"
-                  placeholder="Re-enter password"
+                  placeholder={t('password.confirmPlaceholder')}
                   minLength={6}
                   required
                 />
@@ -1125,14 +1128,14 @@ export default function App() {
                   disabled={passwordUpdating}
                   className="flex-1 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black uppercase tracking-[0.16em] text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {passwordUpdating ? 'Updating...' : 'Update Password'}
+                  {passwordUpdating ? t('password.updating') : t('password.update')}
                 </button>
                 <button
                   type="button"
                   className="rounded-2xl border border-slate-600 bg-slate-800 px-5 py-3 text-sm font-semibold text-slate-300 transition hover:bg-slate-700"
                   onClick={() => { dismissPasswordRecovery(); setNewPassword(''); setConfirmPassword(''); setPasswordError(''); }}
                 >
-                  Skip
+                  {t('password.skip')}
                 </button>
               </div>
             </form>
