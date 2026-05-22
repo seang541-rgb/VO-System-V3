@@ -308,4 +308,45 @@ export const zh: Record<string, string> = {
   'excel.sectionSnapshot': '分部快照',
   'excel.submissionNotes': '提交说明',
   'excel.starRatePreview': 'Star Rate 预览',
+
+  // ── 使用指南 ──
+  'sidebar.guide': '使用指南',
+  'guide.heading': '使用指南',
+  'guide.subheading': '了解 Idea Nest 各项功能的使用方法。按照每张卡片上的步骤即可快速上手。',
+
+  'guide.uploadTitle': '上传 IFC 文件',
+  'guide.uploadSteps': '在侧边栏「工作区」点击「Base IFC」或「Revision IFC」。\n从电脑中选择 .ifc 文件（最大 100MB）。\n等待解析完成，组件数量会显示在侧边栏。',
+  'guide.uploadTip': 'IFC 文件在浏览器本地解析，不会上传到云端。',
+
+  'guide.auditTitle': '运行算量审计',
+  'guide.auditSteps': '先上传至少一个 IFC 文件。\n在「快捷操作」区点击「运行审计」。\n在「审计报告」选项卡查看算量结果。',
+  'guide.auditTip': '审计会自动按 JKR/SMM2 分类，并计算体积和面积。',
+
+  'guide.voTitle': 'VO 对比',
+  'guide.voSteps': '同时上传 Base IFC 和 Revision IFC。\n在「快捷操作」区点击「运行 VO 对比」。\n在「3D 模型 & 差异」选项卡查看 KPI 摘要和详细结果表。',
+  'guide.voTip': '对比会检测两个模型之间的新增、删减和修改。',
+
+  'guide.excelTitle': '导出 VO Excel',
+  'guide.excelSteps': '先运行 VO 对比。\n在「快捷操作」区点击「导出 VO Excel」。\n.xlsx 文件会自动下载，包含封面、指标和明细。',
+  'guide.excelTip': '每次导出消耗 1 个积分，可在顶部栏查看余额。',
+
+  'guide.copilotTitle': 'IFC Copilot',
+  'guide.copilotSteps': '在侧边栏切换到「IFC Copilot」选项卡。\n输入问题或使用示例提示。\nCopilot 可以总结差异、列出主要变化或生成 Excel。',
+  'guide.copilotTip': '每次对话消耗 1 个积分。先上传 IFC 文件可获得更丰富的回答。',
+
+  'guide.viewerTitle': '3D 模型 & 差异',
+  'guide.viewerSteps': '在侧边栏切换到「3D 模型 & 差异」选项卡。\n3D 查看器显示当前加载的 IFC 模型。\nVO 对比后，点击结果行可在 3D 中聚焦该构件。',
+  'guide.viewerTip': '点击「重置相机」按钮可恢复默认视角。',
+
+  'guide.bqTitle': 'BQ 映射 & 定价',
+  'guide.bqSteps': '运行 VO 对比后，切换到「BQ 映射 & 定价」选项卡。\n为每个 QS 描述从下拉菜单选择一个 BQ 项目。\n点击「确认挂载」锁定合同单价。',
+  'guide.bqTip': '单位不匹配的项目会标红并阻止确认。',
+
+  'guide.templateTitle': 'BQ 模板',
+  'guide.templateSteps': '在「快捷操作」区点击「BQ 模板」。\n预设格式的 .xlsx 模板会下载到电脑。\n填入您的中标 BQ 数据后通过侧边栏上传。',
+  'guide.templateTip': '模板包含必填列：项目编号、描述、单位和合同单价。',
+
+  'guide.langTitle': '语言切换',
+  'guide.langSteps': '在右上角顶部栏找到语言按钮。\n点击「中文」切换为中文界面，点击「EN」切换为英文。\n您的偏好会自动保存，下次打开无需重新设置。',
+  'guide.langTip': '所有界面文字、标签和报告内容会即时切换语言。',
 };

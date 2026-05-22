@@ -308,4 +308,45 @@ export const en: Record<string, string> = {
   'excel.sectionSnapshot': 'Section Snapshot',
   'excel.submissionNotes': 'Submission Notes',
   'excel.starRatePreview': 'Star Rate Preview',
+
+  // ── Guide Page ──
+  'sidebar.guide': 'User Guide',
+  'guide.heading': 'User Guide',
+  'guide.subheading': 'Learn how to use each feature of Idea Nest. Follow the numbered steps on each card to get started.',
+
+  'guide.uploadTitle': 'Upload IFC Files',
+  'guide.uploadSteps': 'Click "Base IFC" or "Revision IFC" in the sidebar Workspace section.\nSelect an .ifc file from your computer (max 100 MB).\nWait for parsing to finish — component count appears when ready.',
+  'guide.uploadTip': 'IFC files are parsed locally in your browser. No model data is uploaded to the cloud.',
+
+  'guide.auditTitle': 'Run Quantity Audit',
+  'guide.auditSteps': 'Upload at least one IFC file first.\nClick "Run Audit" in the Quick Actions section.\nView the takeoff report in the Audit Report tab.',
+  'guide.auditTip': 'The audit classifies elements by JKR/SMM2 and calculates volumes and areas automatically.',
+
+  'guide.voTitle': 'VO Comparison',
+  'guide.voSteps': 'Upload both Base IFC and Revision IFC.\nClick "Run VO Comparison" in Quick Actions.\nReview the KPI summary and detailed results table in 3D Model & Diff.',
+  'guide.voTip': 'Comparison detects additions, omissions, and modifications between the two models.',
+
+  'guide.excelTitle': 'Export VO Excel',
+  'guide.excelSteps': 'Run a VO comparison first.\nClick "Export VO Excel" in Quick Actions.\nThe .xlsx file downloads automatically with cover sheet, metrics, and details.',
+  'guide.excelTip': 'Each Excel export consumes 1 credit. Check your balance in the header.',
+
+  'guide.copilotTitle': 'IFC Copilot',
+  'guide.copilotSteps': 'Switch to the IFC Copilot tab in the sidebar.\nType a question or use one of the sample prompts.\nCopilot can summarize differences, list top changes, or generate Excel.',
+  'guide.copilotTip': 'Each conversation consumes 1 credit. Upload IFC files first for richer answers.',
+
+  'guide.viewerTitle': '3D Model & Diff',
+  'guide.viewerSteps': 'Switch to the 3D Model & Diff tab in the sidebar.\nThe 3D viewer shows the currently loaded IFC model.\nAfter VO comparison, click any result row to focus that element in 3D.',
+  'guide.viewerTip': 'Use the Reset Camera button to return to the default view angle.',
+
+  'guide.bqTitle': 'BQ Mapping & Valuation',
+  'guide.bqSteps': 'Run a VO comparison, then switch to BQ Mapping & Valuation tab.\nFor each QS description, select a BQ item from the dropdown.\nClick "Confirm Mount" to lock the contract rate.',
+  'guide.bqTip': 'Unit mismatches are highlighted in red and blocked from confirmation.',
+
+  'guide.templateTitle': 'BQ Template',
+  'guide.templateSteps': 'Click "BQ Template" in the Quick Actions section.\nA pre-formatted .xlsx template downloads to your computer.\nFill in your awarded BQ data and upload it back via the sidebar.',
+  'guide.templateTip': 'The template includes the required columns: Item Reference, Description, Unit, and Contract Rate.',
+
+  'guide.langTitle': 'Language Toggle',
+  'guide.langSteps': 'Find the language button in the top-right header area.\nClick "中文" to switch to Chinese, or "EN" to switch to English.\nYour preference is saved automatically for next time.',
+  'guide.langTip': 'All UI text, labels, and report content switch language instantly.',
 };

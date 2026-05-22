@@ -20,6 +20,7 @@ import ResultsTable from './components/ResultsTable';
 import BQMappingPanel from './components/BQMappingPanel';
 import CopilotPanel from './components/CopilotPanel';
 import AuditPanel from './components/AuditPanel';
+import GuidePage from './components/GuidePage';
 import ViewerErrorBoundary from './components/ViewerErrorBoundary';
 import type { AuditState } from './components/AuditPanel';
 import type { AuditResult } from './audit/types';
@@ -1006,6 +1007,8 @@ export default function App() {
             onRunAudit={runAudit}
             canRun={v1State === 'ready' || v2State === 'ready'}
           />
+        ) : activeTab === 'guide' ? (
+          <GuidePage />
         ) : (
           <div className="flex flex-col border-t border-slate-700 bg-slate-900 px-4 py-4 lg:px-6">
             <div className="min-h-[36rem]">

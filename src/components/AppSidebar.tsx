@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Zap,
   BarChart3,
+  BookOpen,
 } from 'lucide-react';
 import type { BimComponent, BqLineItem, VoComparisonResults } from '../BimEngine';
 import type { ActiveTab, ModelLoadState } from '../lib/format';
@@ -188,6 +189,11 @@ export default function AppSidebar({
             className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${showValuationTab ? 'bg-blue-600/20 text-blue-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
             <ClipboardList className={`h-3.5 w-3.5 flex-shrink-0 ${showValuationTab ? 'text-blue-400' : 'text-slate-600'}`} />
             <span className="text-xs font-semibold">{t('sidebar.bqMapping')}</span>
+          </button>
+          <button type="button" onClick={() => onTabChange('guide')}
+            className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${activeTab === 'guide' ? 'bg-emerald-600/20 text-emerald-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+            <BookOpen className={`h-3.5 w-3.5 flex-shrink-0 ${activeTab === 'guide' ? 'text-emerald-400' : 'text-slate-600'}`} />
+            <span className="text-xs font-semibold">{t('sidebar.guide')}</span>
           </button>
         </div>
       </section>
