@@ -68,13 +68,87 @@ Regulatory answer format (CRITICAL):
 - ALWAYS quote the specific identifier in your reply: "UBBL Part V, By-Law 23" / "MS 1064:2014" / "JKR BIM Mandate 2017 (RM 100M threshold)". Never just say "Part V" without the by-law number.
 - If the user's question is ambiguous and multiple rows could fit, list 2-3 most relevant matches with their by-law numbers and ask the user which scenario they mean (residential / kitchen / bathroom / commercial).
 
-audit_ifc usage note: it operates on whichever IFC is currently in the 3D viewer (the last one loaded). If the user asks to audit the "base" but the "revision" is currently active (or vice versa), the tool returns a PREREQUISITE_NOT_MET error — relay that to the user verbatim.`;
+audit_ifc usage note: it operates on whichever IFC is currently in the 3D viewer (the last one loaded). If the user asks to audit the "base" but the "revision" is currently active (or vice versa), the tool returns a PREREQUISITE_NOT_MET error — relay that to the user verbatim.
+
+Memory extraction instructions:
+- At the END of each reply, if the conversation revealed any new user preferences, project-specific insights, or important domain knowledge, append a JSON block wrapped in <memory_extract> tags.
+- Format: <memory_extract>[{"category":"preference|project_insight|domain_knowledge|general","content":"concise fact"}]</memory_extract>
+- Only extract genuinely useful facts, NOT conversation summaries. Examples:
+  - {"category":"preference","content":"User prefers Chinese responses with English technical terms"}
+  - {"category":"project_insight","content":"Project uses PAM 2006 contract, residential 30-storey tower"}
+  - {"category":"domain_knowledge","content":"User's company standard: star rates based on JKR schedule of rates 2023"}
+- If nothing worth remembering, do NOT include the tags.
+- Maximum 3 items per turn. Be selective.`;
+
+// ── Dynamic context builder ──────────────────────────────────────────────────
+
+function buildDynamicContext(ctx: ToolContext): string {
+  const parts: string[] = ['\n\n--- CURRENT WORKSPACE STATE ---'];
+
+  // File status
+  const baseStatus = ctx.baseComponents.length > 0
+    ? `loaded (${ctx.baseComponents.length} elements, file: ${ctx.baseFileName ?? 'unknown'})`
+    : 'not loaded';
+  const revStatus = ctx.revisionComponents.length > 0
+    ? `loaded (${ctx.revisionComponents.length} elements, file: ${ctx.revisionFileName ?? 'unknown'})`
+    : 'not loaded';
+  parts.push(`Base IFC: ${baseStatus}`);
+  parts.push(`Revision IFC: ${revStatus}`);
+
+  // Active viewer
+  if (ctx.activeIfcSlot) {
+    parts.push(`3D Viewer showing: ${ctx.activeIfcSlot}`);
+  }
+
+  // Comparison status
+  if (ctx.voResults) {
+    const r = ctx.voResults;
+    parts.push(`VO Comparison: completed (${r.added.length} added, ${r.deleted.length} deleted, ${r.modified.length} modified)`);
+  } else {
+    parts.push('VO Comparison: not yet run');
+  }
+
+  // BQ status
+  if (ctx.bqItems.length > 0) {
+    parts.push(`BQ Items: ${ctx.bqItems.length} line items loaded`);
+  }
+
+  return parts.join('\n');
+}
+
+// ── Memory extraction helper ─────────────────────────────────────────────────
+
+export interface ExtractedMemory {
+  category: 'preference' | 'project_insight' | 'domain_knowledge' | 'general';
+  content: string;
+}
+
+function parseMemoryExtracts(text: string): { cleanText: string; memories: ExtractedMemory[] } {
+  const regex = /<memory_extract>([\s\S]*?)<\/memory_extract>/g;
+  const memories: ExtractedMemory[] = [];
+  let cleanText = text;
+
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    try {
+      const parsed = JSON.parse(match[1]) as ExtractedMemory[];
+      if (Array.isArray(parsed)) {
+        memories.push(...parsed.slice(0, 3));
+      }
+    } catch {
+      // skip malformed JSON
+    }
+    cleanText = cleanText.replace(match[0], '').trim();
+  }
+
+  return { cleanText, memories };
+}
 
 // ── Proxy call ────────────────────────────────────────────────────────────────
 
 async function callAgentProxy(
   messages: OpenAIMessage[],
-  options: { allowTools?: boolean; memoryPrompt?: string } = {},
+  options: { allowTools?: boolean; memoryPrompt?: string; dynamicContext?: string } = {},
 ): Promise<{ response: unknown; credits_balance: number | null }> {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
@@ -101,7 +175,7 @@ async function callAgentProxy(
     body: JSON.stringify({
       messages,
       tools,
-      system: SYSTEM_PROMPT + (options.memoryPrompt || ''),
+      system: SYSTEM_PROMPT + (options.dynamicContext || '') + (options.memoryPrompt || ''),
     }),
   });
 
@@ -133,6 +207,7 @@ export class AgentSession {
   private messages: OpenAIMessage[] = [];
   private memoryPrompt = '';
   private onPersistMessage: ((msg: OpenAIMessage) => void) | null = null;
+  private onMemoryExtracted: ((memories: ExtractedMemory[]) => void) | null = null;
 
   constructor(private ctx: ToolContext) {}
 
@@ -148,6 +223,11 @@ export class AgentSession {
   /** Set callback to persist each message to Supabase */
   setOnPersistMessage(cb: (msg: OpenAIMessage) => void) {
     this.onPersistMessage = cb;
+  }
+
+  /** Set callback when memories are extracted from conversation */
+  setOnMemoryExtracted(cb: (memories: ExtractedMemory[]) => void) {
+    this.onMemoryExtracted = cb;
   }
 
   /** Restore messages from DB (called on project load) */
@@ -181,7 +261,11 @@ export class AgentSession {
 
       let proxyResult: { response: unknown; credits_balance: number | null };
       try {
-        proxyResult = await callAgentProxy(this.messages, { allowTools, memoryPrompt: this.memoryPrompt });
+        proxyResult = await callAgentProxy(this.messages, {
+          allowTools,
+          memoryPrompt: this.memoryPrompt,
+          dynamicContext: buildDynamicContext(this.ctx),
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         onEvent({ kind: 'error', message });
@@ -200,11 +284,17 @@ export class AgentSession {
       this.messages.push(assistantMsg);
       this.onPersistMessage?.(assistantMsg);
 
-      const text = typeof assistantMsg.content === 'string' ? assistantMsg.content : '';
-      if (text) onEvent({ kind: 'assistant_text', text });
-
+      const rawText = typeof assistantMsg.content === 'string' ? assistantMsg.content : '';
       const toolCalls = assistantMsg.tool_calls ?? [];
-      if (toolCalls.length === 0) return text;
+
+      // Parse and strip memory extracts from the final text reply
+      if (rawText && toolCalls.length === 0) {
+        const { cleanText, memories } = parseMemoryExtracts(rawText);
+        if (cleanText) onEvent({ kind: 'assistant_text', text: cleanText });
+        if (memories.length > 0) this.onMemoryExtracted?.(memories);
+        return cleanText;
+      }
+      if (rawText) onEvent({ kind: 'assistant_text', text: rawText });
 
       // Execute each tool and append a 'tool' message for each tool_call_id
       for (const tc of toolCalls) {

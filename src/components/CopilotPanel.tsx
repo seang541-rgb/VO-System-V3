@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Sparkles, Send, RefreshCw, Wrench, Loader2 } from 'lucide-react';
-import { AgentSession, type AgentEvent, type OpenAIMessage } from '../agent/agent-client';
+import { AgentSession, type AgentEvent, type OpenAIMessage, type ExtractedMemory } from '../agent/agent-client';
 import type { ToolContext } from '../agent/tools';
 import { useCopilotHistory } from '../hooks/useCopilotHistory';
-import { useCopilotMemory } from '../hooks/useCopilotMemory';
+import { useCopilotMemory, type MemoryCategory } from '../hooks/useCopilotMemory';
 
 interface ChatEntry {
   id: string;
@@ -45,7 +45,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
   const historyRestoredRef = useRef(false);
 
   const { restoredMessages, persistMessage, clearHistory } = useCopilotHistory(projectId);
-  const { buildMemoryPrompt } = useCopilotMemory(userId);
+  const { buildMemoryPrompt, addMemory } = useCopilotMemory(userId);
 
   const baseReady = toolContext.baseComponents.length > 0;
   const revReady = toolContext.revisionComponents.length > 0;
@@ -57,12 +57,17 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
     } else {
       sessionRef.current.updateContext(toolContext);
     }
-    // Inject memory and persistence callback
+    // Inject memory, persistence, and memory extraction callbacks
     sessionRef.current.setMemoryPrompt(buildMemoryPrompt());
     sessionRef.current.setOnPersistMessage((msg: OpenAIMessage) => {
       void persistMessage(msg);
     });
-  }, [toolContext, buildMemoryPrompt, persistMessage]);
+    sessionRef.current.setOnMemoryExtracted((memories: ExtractedMemory[]) => {
+      for (const m of memories) {
+        void addMemory(m.category as MemoryCategory, m.content, projectId);
+      }
+    });
+  }, [toolContext, buildMemoryPrompt, persistMessage, addMemory, projectId]);
 
   // Restore chat history from DB on first load
   useEffect(() => {
