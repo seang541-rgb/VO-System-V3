@@ -332,18 +332,30 @@ export class BimEngine {
   dispose() {
     window.removeEventListener('resize', this.onWindowResize);
     if (this.animFrameId !== null) cancelAnimationFrame(this.animFrameId);
+    this.disablePicking();
+    this.disableMeasurement();
+    this.renderer.domElement.remove();
     this.renderer.dispose();
   }
 
+  private needsInitialResize = true;
+
   onWindowResize = () => {
-    if (!this.container.clientWidth) return;
-    this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    if (!w || !h) return;
+    this.needsInitialResize = false;
+    this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+    this.renderer.setSize(w, h);
   };
 
   animate = () => {
     this.animFrameId = requestAnimationFrame(this.animate);
+    // Auto-resize when container becomes visible after starting hidden
+    if (this.needsInitialResize && this.container.clientWidth > 0) {
+      this.onWindowResize();
+    }
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   };
@@ -1417,7 +1429,11 @@ export class BimEngine {
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, this.camera);
-      const intersects = raycaster.intersectObject(this.ifcModel, true);
+      // Only intersect meshes (skip LineSegments/edges which lack faceIndex)
+      const allIntersects = raycaster.intersectObject(this.ifcModel, true);
+      const intersects = allIntersects.filter(
+        (i) => i.object instanceof THREE.Mesh && i.faceIndex != null,
+      );
 
       if (intersects.length === 0) {
         this.pickCallback(null);
@@ -1425,11 +1441,7 @@ export class BimEngine {
       }
 
       const hit = intersects[0];
-      const faceIndex = hit.faceIndex;
-      if (faceIndex == null) {
-        this.pickCallback(null);
-        return;
-      }
+      const faceIndex = hit.faceIndex!;
 
       // Try to get expressID from the geometry
       const mesh = hit.object as THREE.Mesh;
@@ -1613,10 +1625,14 @@ export class BimEngine {
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, this.camera);
-      const intersects = raycaster.intersectObject(this.ifcModel, true);
-      if (intersects.length === 0) return;
+      // Only intersect meshes (skip LineSegments/edges)
+      const allMeasureIntersects = raycaster.intersectObject(this.ifcModel, true);
+      const measureIntersects = allMeasureIntersects.filter(
+        (i) => i.object instanceof THREE.Mesh,
+      );
+      if (measureIntersects.length === 0) return;
 
-      const point = intersects[0].point.clone();
+      const point = measureIntersects[0].point.clone();
 
       if (!this.measureFirstPoint) {
         // First click: place marker
