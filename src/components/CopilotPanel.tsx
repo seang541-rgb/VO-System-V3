@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Sparkles, Send, RefreshCw, Wrench, Loader2 } from 'lucide-react';
-import { AgentSession, type AgentEvent } from '../agent/agent-client';
+import { AgentSession, type AgentEvent, type OpenAIMessage } from '../agent/agent-client';
 import type { ToolContext } from '../agent/tools';
+import { useCopilotHistory } from '../hooks/useCopilotHistory';
+import { useCopilotMemory } from '../hooks/useCopilotMemory';
 
 interface ChatEntry {
   id: string;
@@ -13,6 +15,8 @@ interface ChatEntry {
 interface CopilotPanelProps {
   toolContext: ToolContext;
   signedIn: boolean;
+  projectId?: string;
+  userId?: string;
   onCreditsUpdate?: (balance: number) => void;
 }
 
@@ -31,13 +35,17 @@ function truncate(str: string, n = 400) {
   return str.length > n ? `${str.slice(0, n)}…` : str;
 }
 
-export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }: CopilotPanelProps) {
+export default function CopilotPanel({ toolContext, signedIn, projectId, userId, onCreditsUpdate }: CopilotPanelProps) {
   const sessionRef = useRef<AgentSession | null>(null);
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [activeToolLabel, setActiveToolLabel] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const historyRestoredRef = useRef(false);
+
+  const { restoredMessages, persistMessage, clearHistory } = useCopilotHistory(projectId);
+  const { buildMemoryPrompt } = useCopilotMemory(userId);
 
   const baseReady = toolContext.baseComponents.length > 0;
   const revReady = toolContext.revisionComponents.length > 0;
@@ -49,7 +57,36 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
     } else {
       sessionRef.current.updateContext(toolContext);
     }
-  }, [toolContext]);
+    // Inject memory and persistence callback
+    sessionRef.current.setMemoryPrompt(buildMemoryPrompt());
+    sessionRef.current.setOnPersistMessage((msg: OpenAIMessage) => {
+      void persistMessage(msg);
+    });
+  }, [toolContext, buildMemoryPrompt, persistMessage]);
+
+  // Restore chat history from DB on first load
+  useEffect(() => {
+    if (historyRestoredRef.current || restoredMessages.length === 0) return;
+    historyRestoredRef.current = true;
+
+    // Rebuild chat entries from restored messages
+    const restored: ChatEntry[] = [];
+    for (const msg of restoredMessages) {
+      if (msg.role === 'user' && msg.content) {
+        restored.push({ id: newId(), kind: 'user', text: msg.content });
+      } else if (msg.role === 'assistant' && msg.content) {
+        restored.push({ id: newId(), kind: 'assistant', text: msg.content });
+      } else if (msg.role === 'tool' && msg.content) {
+        restored.push({ id: newId(), kind: 'tool', text: 'tool result', meta: truncate(msg.content, 200) });
+      }
+    }
+    setEntries(restored);
+
+    // Restore agent session messages
+    if (sessionRef.current) {
+      sessionRef.current.restoreMessages(restoredMessages);
+    }
+  }, [restoredMessages]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -129,6 +166,8 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
     sessionRef.current?.reset();
     setEntries([]);
     setActiveToolLabel(null);
+    historyRestoredRef.current = false;
+    void clearHistory();
   };
 
   const statusLine = useMemo(() => {

@@ -74,7 +74,7 @@ audit_ifc usage note: it operates on whichever IFC is currently in the 3D viewer
 
 async function callAgentProxy(
   messages: OpenAIMessage[],
-  options: { allowTools?: boolean } = {},
+  options: { allowTools?: boolean; memoryPrompt?: string } = {},
 ): Promise<{ response: unknown; credits_balance: number | null }> {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
@@ -101,7 +101,7 @@ async function callAgentProxy(
     body: JSON.stringify({
       messages,
       tools,
-      system: SYSTEM_PROMPT,
+      system: SYSTEM_PROMPT + (options.memoryPrompt || ''),
     }),
   });
 
@@ -131,11 +131,28 @@ function extractAssistantMessage(response: unknown): OpenAIMessage | null {
 
 export class AgentSession {
   private messages: OpenAIMessage[] = [];
+  private memoryPrompt = '';
+  private onPersistMessage: ((msg: OpenAIMessage) => void) | null = null;
 
   constructor(private ctx: ToolContext) {}
 
   updateContext(ctx: ToolContext) {
     this.ctx = ctx;
+  }
+
+  /** Set the long-term memory text to append to system prompt */
+  setMemoryPrompt(prompt: string) {
+    this.memoryPrompt = prompt;
+  }
+
+  /** Set callback to persist each message to Supabase */
+  setOnPersistMessage(cb: (msg: OpenAIMessage) => void) {
+    this.onPersistMessage = cb;
+  }
+
+  /** Restore messages from DB (called on project load) */
+  restoreMessages(messages: OpenAIMessage[]) {
+    this.messages = [...messages];
   }
 
   reset() {
@@ -147,7 +164,9 @@ export class AgentSession {
   }
 
   async send(userText: string, onEvent: (event: AgentEvent) => void): Promise<string> {
-    this.messages.push({ role: 'user', content: userText });
+    const userMsg: OpenAIMessage = { role: 'user', content: userText };
+    this.messages.push(userMsg);
+    this.onPersistMessage?.(userMsg);
 
     const MAX_HOPS = 4;
     // Track tool calls within this turn to prevent runaway loops on stubborn models
@@ -162,7 +181,7 @@ export class AgentSession {
 
       let proxyResult: { response: unknown; credits_balance: number | null };
       try {
-        proxyResult = await callAgentProxy(this.messages, { allowTools });
+        proxyResult = await callAgentProxy(this.messages, { allowTools, memoryPrompt: this.memoryPrompt });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         onEvent({ kind: 'error', message });
@@ -179,6 +198,7 @@ export class AgentSession {
 
       // Append assistant message to history (preserve tool_calls for the next round)
       this.messages.push(assistantMsg);
+      this.onPersistMessage?.(assistantMsg);
 
       const text = typeof assistantMsg.content === 'string' ? assistantMsg.content : '';
       if (text) onEvent({ kind: 'assistant_text', text });
@@ -231,11 +251,13 @@ export class AgentSession {
           result,
           durationMs: Math.round(performance.now() - started),
         });
-        this.messages.push({
+        const toolMsg: OpenAIMessage = {
           role: 'tool',
           tool_call_id: tc.id,
           content: JSON.stringify(result),
-        });
+        };
+        this.messages.push(toolMsg);
+        this.onPersistMessage?.(toolMsg);
       }
     }
 

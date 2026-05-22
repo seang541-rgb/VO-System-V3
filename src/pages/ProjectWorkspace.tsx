@@ -1235,6 +1235,8 @@ export default function ProjectWorkspace() {
                     <CopilotPanel
                       toolContext={agentToolContext}
                       signedIn={!!user}
+                      projectId={projectId}
+                      userId={user?.id}
                       onCreditsUpdate={(balance) => setCreditsBalance(balance)}
                     />
                   </div>
