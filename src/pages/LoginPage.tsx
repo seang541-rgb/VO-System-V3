@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
+import { ArrowLeft, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
 import { useAuth } from '../auth/AuthProvider';
+import { supabase } from '../lib/supabase';
 
 export default function LoginPage() {
   const { signIn, signUp } = useAuth();
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -18,7 +19,13 @@ export default function LoginPage() {
     setMessage('');
 
     try {
-      if (mode === 'login') {
+      if (mode === 'forgot') {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        if (resetError) throw resetError;
+        setMessage('Password reset link sent! Check your email inbox.');
+      } else if (mode === 'login') {
         await signIn(email, password);
       } else {
         const signUpMessage = await signUp(email, password);
@@ -64,28 +71,47 @@ export default function LoginPage() {
         </section>
 
         <section className="rounded-[2rem] border border-slate-700/50 bg-slate-900/80 p-8 shadow-[0_24px_90px_rgba(2,6,23,0.55)] backdrop-blur-xl lg:p-10">
-          <div className="flex items-center justify-between gap-4">
+          {mode === 'forgot' ? (
+            /* ── Forgot Password view ──────────────────────────── */
             <div>
-              <div className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">Secure Access</div>
-              <h2 className="mt-2 text-3xl font-black text-white">{mode === 'login' ? 'Sign in' : 'Create account'}</h2>
-            </div>
-            <div className="inline-flex rounded-2xl border border-slate-700/50 bg-slate-800 p-1 text-sm">
               <button
                 type="button"
-                className={`rounded-xl px-4 py-2 font-semibold transition ${mode === 'login' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
-                onClick={() => setMode('login')}
+                onClick={() => { setMode('login'); setError(''); setMessage(''); }}
+                className="mb-4 inline-flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
               >
-                Login
+                <ArrowLeft size={14} /> Back to login
               </button>
-              <button
-                type="button"
-                className={`rounded-xl px-4 py-2 font-semibold transition ${mode === 'signup' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}
-                onClick={() => setMode('signup')}
-              >
-                Sign up
-              </button>
+              <div className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">Account Recovery</div>
+              <h2 className="mt-2 text-3xl font-black text-white">Reset password</h2>
+              <p className="mt-3 text-sm leading-6 text-slate-400">
+                Enter your email address and we&apos;ll send you a link to reset your password.
+              </p>
             </div>
-          </div>
+          ) : (
+            /* ── Login / Signup header ─────────────────────────── */
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">Secure Access</div>
+                <h2 className="mt-2 text-3xl font-black text-white">{mode === 'login' ? 'Sign in' : 'Create account'}</h2>
+              </div>
+              <div className="inline-flex rounded-2xl border border-slate-700/50 bg-slate-800 p-1 text-sm">
+                <button
+                  type="button"
+                  className={`rounded-xl px-4 py-2 font-semibold transition ${mode === 'login' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                  onClick={() => { setMode('login'); setError(''); setMessage(''); }}
+                >
+                  Login
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-xl px-4 py-2 font-semibold transition ${mode === 'signup' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                  onClick={() => { setMode('signup'); setError(''); setMessage(''); }}
+                >
+                  Sign up
+                </button>
+              </div>
+            </div>
+          )}
 
           <form className="mt-8 space-y-5" onSubmit={submit}>
             <label className="block space-y-2">
@@ -101,19 +127,33 @@ export default function LoginPage() {
               />
             </label>
 
-            <label className="block space-y-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Password</span>
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className="w-full rounded-2xl border border-slate-700/50 bg-slate-800/80 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500/60 focus:ring-2 focus:ring-blue-600/20"
-                placeholder="Minimum 6 characters"
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                minLength={6}
-                required
-              />
-            </label>
+            {mode !== 'forgot' && (
+              <label className="block space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Password</span>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-700/50 bg-slate-800/80 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500/60 focus:ring-2 focus:ring-blue-600/20"
+                  placeholder="Minimum 6 characters"
+                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                  minLength={6}
+                  required
+                />
+              </label>
+            )}
+
+            {mode === 'login' && (
+              <div className="text-right">
+                <button
+                  type="button"
+                  onClick={() => { setMode('forgot'); setError(''); setMessage(''); }}
+                  className="text-xs text-blue-400 transition hover:text-blue-300 hover:underline"
+                >
+                  Forgot password?
+                </button>
+              </div>
+            )}
 
             {error && <div className="rounded-2xl border border-red-900/70 bg-red-950/40 px-4 py-3 text-sm text-red-200">{error}</div>}
             {message && <div className="rounded-2xl border border-emerald-900/70 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-200">{message}</div>}
@@ -121,10 +161,22 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={submitting}
-              className={`flex w-full items-center justify-center gap-3 rounded-2xl px-5 py-3 text-sm font-black tracking-[0.16em] uppercase transition ${mode === 'login' ? 'bg-blue-600 hover:bg-blue-500' : 'bg-emerald-500 hover:bg-emerald-400'} ${submitting ? 'cursor-not-allowed opacity-60' : 'text-white'}`}
+              className={`flex w-full items-center justify-center gap-3 rounded-2xl px-5 py-3 text-sm font-black tracking-[0.16em] uppercase transition ${
+                mode === 'forgot'
+                  ? 'bg-blue-600 hover:bg-blue-500'
+                  : mode === 'login'
+                    ? 'bg-blue-600 hover:bg-blue-500'
+                    : 'bg-emerald-500 hover:bg-emerald-400'
+              } ${submitting ? 'cursor-not-allowed opacity-60' : 'text-white'}`}
             >
               {submitting ? <RefreshCw size={16} className="animate-spin" /> : <Sparkles size={16} />}
-              {submitting ? 'Processing' : mode === 'login' ? 'Enter Workspace' : 'Create Workspace Account'}
+              {submitting
+                ? 'Processing'
+                : mode === 'forgot'
+                  ? 'Send Reset Link'
+                  : mode === 'login'
+                    ? 'Enter Workspace'
+                    : 'Create Workspace Account'}
             </button>
           </form>
         </section>
