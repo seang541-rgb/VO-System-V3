@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '../auth/AuthProvider';
 import { useSubscription } from '../hooks/useSubscription';
 import { useCredits } from '../hooks/useCredits';
+import { useUsageStats } from '../hooks/useUsageStats';
 import { getPlanLimits, formatStorageSize } from '../lib/plan-limits';
 import PlanBadge from '../components/PlanBadge';
 import LanguageSwitcher from '../components/LanguageSwitcher';
@@ -13,6 +14,7 @@ export default function SettingsPage() {
   const { user } = useAuth();
   const { subscription, plan } = useSubscription(user?.id);
   const { balance } = useCredits(user?.id);
+  const { comparisonsThisMonth, storageUsedBytes } = useUsageStats(user?.id);
   const limits = getPlanLimits(plan);
 
   const renewalDate = subscription?.current_period_end
@@ -112,10 +114,10 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between">
           <span className="text-[11px] text-slate-400">{t('settings.comparisonsThisMonth')}</span>
           <span className="text-xs text-white">
-            {'— '}
+            {comparisonsThisMonth}
             {limits.maxComparisonsPerMonth !== Infinity && (
               <span className="text-slate-500">
-                / {limits.maxComparisonsPerMonth}
+                {' '}/ {limits.maxComparisonsPerMonth}
               </span>
             )}
           </span>
@@ -124,9 +126,9 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between">
           <span className="text-[11px] text-slate-400">{t('settings.storageUsed')}</span>
           <span className="text-xs text-white">
-            {'— '}
+            {formatStorageSize(storageUsedBytes)}
             <span className="text-slate-500">
-              / {formatStorageSize(limits.maxStorageBytes)}
+              {' '}/ {formatStorageSize(limits.maxStorageBytes)}
             </span>
           </span>
         </div>
