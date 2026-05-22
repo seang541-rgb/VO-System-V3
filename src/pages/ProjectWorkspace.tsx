@@ -176,6 +176,8 @@ export default function ProjectWorkspace() {
     const engine = new BimEngine(containerRef.current);
     engineRef.current = engine;
     engine.onLog = (text) => setSysLog(text);
+    // DEV: expose for debugging
+    if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__engine = engine;
 
     return () => {
       engine.dispose();

@@ -57,13 +57,14 @@ src/
     tools.ts            # Agent tool definitions
     kb-lookups.ts       # Knowledge base lookups
   components/
-    AppHeader.tsx        # Top nav bar (sticky, h=57px)
-    AppSidebar.tsx       # Left sidebar (w=72, sticky below header)
+    AppHeader.tsx        # Top nav bar (V1, sticky, h=57px)
+    AppSidebar.tsx       # Left sidebar (V1, w=72, sticky below header)
     AuditPanel.tsx       # Audit report: idle/running/done/error states
     AuthGuard.tsx        # Login gate
     CopilotPanel.tsx     # AI copilot chat interface
     CreateProjectModal.tsx  # New project dialog
     ErrorBoundary.tsx    # React 19 compatible error boundary
+    GlobalSidebar.tsx    # Left sidebar navigation (V2, replaces V1 AppSidebar)
     KPIGrid.tsx          # Dashboard KPI cards
     LanguageSwitcher.tsx # i18n language selector
     ModelViewer.tsx      # Three.js 3D model viewer
@@ -71,10 +72,12 @@ src/
     ResultsTable.tsx     # VO comparison results table
     BQMappingPanel.tsx   # BQ mapping and valuation panel
     UpgradePrompt.tsx    # Modal shown when plan limit is reached
+    ViewerErrorBoundary.tsx # 3D viewer error boundary
   layouts/
     AppLayout.tsx        # Authenticated shell (header + sidebar + outlet)
   pages/
-    LoginPage.tsx        # Login/signup page
+    LoginPage.tsx        # Login/signup/forgot-password page
+    ResetPasswordPage.tsx # Password reset form (from email link)
     DashboardPage.tsx    # Project list (/dashboard)
     ProjectWorkspace.tsx # IFC compare/audit workspace (/project/:id)
     SettingsPage.tsx     # Account, subscription, language, usage (/settings)
@@ -106,7 +109,8 @@ type AuditState = 'idle' | 'running' | 'done' | 'error';
 ## V2 Architecture
 
 ### Routing (React Router v7)
-- `/login` → LoginPage
+- `/login` → LoginPage (includes forgot password flow)
+- `/reset-password` → ResetPasswordPage (set new password after email link)
 - `/dashboard` → DashboardPage (project list)
 - `/project/:id` → ProjectWorkspace (evolved from V1 App.tsx)
 - `/settings` → SettingsPage
