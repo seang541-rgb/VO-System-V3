@@ -1,0 +1,127 @@
+{
+  "app": {
+    "name": "Idea Nest · VO Copilot",
+    "tagline": "Variation Order & Contract Claim Intelligence"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "settings": "Settings",
+    "signOut": "Sign Out"
+  },
+  "dashboard": {
+    "title": "My Projects",
+    "newProject": "New Project",
+    "noProjects": "No projects yet — click New Project to get started",
+    "activeProjects": "Active Projects",
+    "comparisonsThisMonth": "Comparisons This Month",
+    "lastComparison": "Last Comparison",
+    "files": "files",
+    "archived": "Archived"
+  },
+  "project": {
+    "createTitle": "Create Project",
+    "name": "Project Name",
+    "namePlaceholder": "Enter project name",
+    "description": "Description",
+    "descriptionPlaceholder": "Enter project description (optional)",
+    "create": "Create",
+    "cancel": "Cancel",
+    "archive": "Archive",
+    "delete": "Delete"
+  },
+  "workspace": {
+    "files": "Files",
+    "uploadIfc": "Upload IFC",
+    "voHistory": "VO History",
+    "noHistory": "No variation orders yet",
+    "base": "Base",
+    "revision": "Revision",
+    "runCompare": "Run Comparison",
+    "runAudit": "Run Audit",
+    "exportExcel": "Export Excel",
+    "exportPdf": "Export PDF",
+    "bqTemplate": "BQ Template"
+  },
+  "copilot": {
+    "title": "VO Copilot",
+    "thinking": "Copilot is thinking…",
+    "toolRunning": "Running tool…",
+    "analyzing": "Analyzing…",
+    "send": "Send",
+    "reset": "Reset Chat",
+    "placeholder": "Ask a question, e.g. What is the cost impact of this variation?",
+    "loginRequired": "Please sign in to use the Copilot",
+    "creditNote": "1 credit per query"
+  },
+  "settings": {
+    "title": "Settings",
+    "account": "Account",
+    "email": "Email",
+    "subscription": "Subscription",
+    "currentPlan": "Current Plan",
+    "upgrade": "Upgrade",
+    "managePlan": "Manage Plan",
+    "language": "Language",
+    "usage": "Usage",
+    "comparisonsThisMonth": "Comparisons This Month",
+    "storageUsed": "Storage Used"
+  },
+  "plans": {
+    "free": "Free",
+    "pro": "Pro",
+    "enterprise": "Enterprise",
+    "perMonth": "/ month"
+  },
+  "common": {
+    "loading": "Loading…",
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "error": "Something went wrong",
+    "retry": "Retry",
+    "back": "Back",
+    "components": "Components",
+    "ready": "Ready",
+    "pending": "Pending",
+    "parsing": "Parsing",
+    "noData": "No data available"
+  },
+  "status": {
+    "baseIfc": "Base IFC",
+    "revisionIfc": "Revision IFC",
+    "comparison": "Comparison"
+  },
+  "audit": {
+    "title": "Compliance Audit",
+    "running": "Audit running…",
+    "complete": "Audit complete",
+    "failed": "Audit failed"
+  },
+  "billing": {
+    "credits": "Credits",
+    "noCredits": "Insufficient credits",
+    "topUp": "Top Up Credits"
+  },
+  "welcome": {
+    "title": "What can I help with?",
+    "subtitle": "IFC Smart Analysis Platform",
+    "cardAudit": "Quick Quantity Audit",
+    "cardAuditDesc": "IFC Quantity Takeoff",
+    "cardCompare": "VO Comparison",
+    "cardCompareDesc": "Variation Order Diff",
+    "cardCopilot": "AI Copilot",
+    "cardCopilotDesc": "Smart Analysis Agent",
+    "cardExport": "Export Report",
+    "cardExportDesc": "Excel & PDF Export"
+  },
+  "toast": {
+    "projectCreated": "Project created",
+    "projectArchived": "Project archived",
+    "fileUploaded": "File uploaded successfully",
+    "comparisonSaved": "Comparison saved",
+    "exportComplete": "Export complete",
+    "voComplete": "Variation order analysis complete",
+    "auditComplete": "Audit complete",
+    "error": "Action failed, please try again"
+  }
+}

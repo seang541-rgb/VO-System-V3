@@ -1,7 +1,7 @@
 # VO System V3 — IFC VO Copilot with AI Agent
 
 ## Project Overview
-IFC-based Variation Order (VO) comparison and quantity takeoff platform with embedded AI agent.
+IFC-based Variation Order (VO) comparison and quantity takeoff SaaS platform with embedded AI agent.
 Targeted at Malaysian construction industry — JKR/SMM2 classification standards.
 Core value: (A) instant audit/quantity takeoff, (B) VO comparison with AI copilot agent.
 
@@ -14,6 +14,8 @@ Core value: (A) instant audit/quantity takeoff, (B) VO comparison with AI copilo
 - **AI Agent**: NVIDIA NIM (OpenAI-compatible, ReAct pattern)
 - **OCR**: Tesseract.js (agent perception layer for scanned BQ/contracts)
 - **Export**: xlsx (Excel), jspdf + jspdf-autotable (PDF)
+- **i18n**: react-i18next (zh/en/ms)
+- **Routing**: React Router v7
 - **Notifications**: react-hot-toast (dark theme)
 - **Tests**: Vitest
 
@@ -24,17 +26,20 @@ npm run build      # Production build
 npm run lint       # TypeScript type-check (tsc --noEmit)
 npm run test       # Vitest run
 npm run test:watch # Vitest watch mode
+npm run compare    # CLI IFC comparison (basin test fixtures)
 ```
 
 ## Architecture
 ```
 src/
-  main.tsx              # Entry: StrictMode > ErrorBoundary > AuthProvider > App
-  App.tsx               # Single-page workspace (no router)
+  main.tsx              # Entry: StrictMode > ErrorBoundary > AuthProvider > RouterProvider
+  router.tsx            # React Router v7 route definitions
+  App.tsx               # V1 single-page workspace (used inside ProjectWorkspace)
   BimEngine.ts          # IFC loading via web-ifc, 3D engine, comparison
   vo-diff-core.ts       # VO comparison engine
   vo-report.ts          # Excel export logic
   bq-tools.ts           # BQ parsing and matching
+  bq-vector-match.ts    # Semantic BQ matching via embed-bq edge function
   qs-helpers.ts         # QS label construction
   qs-config.ts          # QS measurement configuration
   qs-project-config.ts  # Project-level QS overrides
@@ -43,6 +48,9 @@ src/
   lib/
     format.ts           # ActiveTab type, formatting utilities
     supabase.ts         # Supabase client singleton
+    i18n.ts             # react-i18next config (zh/en/ms)
+    plan-limits.ts      # PlanName type, getPlanLimits(), formatStorageSize()
+    storage.ts          # Supabase Storage helpers
   auth/
     AuthProvider.tsx     # Supabase auth context
   audit/                # Full audit engine + tests
@@ -58,42 +66,94 @@ src/
     agent-client.ts     # ReAct AI agent (NVIDIA NIM, OpenAI-compatible)
     tools.ts            # Agent tool definitions + dependency router
     kb-lookups.ts       # Knowledge base lookups (Supabase)
+    context-manager.ts  # Session context tracking across tool hops
+    roles.ts            # Multi-role system (QS, Contract, Compliance, Reporter)
+    proactive-discovery.ts  # Workspace analysis → suggestion engine
   ocr/
     ocr-engine.ts       # Tesseract.js OCR with BQ extraction
   report/
     pdf-generator.ts    # jsPDF VO substantiation report
   components/
-    AppHeader.tsx        # Top nav bar (logo + credits + sign out)
-    AppSidebar.tsx       # Left sidebar (file upload, actions, tab nav)
+    AppHeader.tsx        # Top nav bar (logo + credits + plan + i18n + sign out)
+    AppSidebar.tsx       # Left sidebar (V1 workspace, file upload, actions)
+    GlobalSidebar.tsx    # Left sidebar navigation (V2, route-aware)
+    ProjectSidebar.tsx   # Project workspace sidebar
     AuditPanel.tsx       # Audit report: idle/running/done/error states
     AuthGuard.tsx        # Login gate
     BQMappingPanel.tsx   # BQ mapping and valuation panel
     CopilotPanel.tsx     # AI copilot chat interface (agent interaction)
+    CreateProjectModal.tsx  # New project dialog
     ErrorBoundary.tsx    # React 19 compatible error boundary
     ViewerErrorBoundary.tsx # 3D viewer error boundary
     KPIGrid.tsx          # Dashboard KPI cards
+    LanguageSwitcher.tsx # i18n language selector
     ModelViewer.tsx      # Three.js 3D model viewer
+    PlanBadge.tsx        # Coloured plan label (free/pro/enterprise)
+    ProjectCard.tsx      # Project card for dashboard
     ResultsTable.tsx     # VO comparison results table
+    UpgradePrompt.tsx    # Modal shown when plan limit is reached
+  layouts/
+    AppLayout.tsx        # Authenticated shell (header + sidebar + outlet)
   pages/
-    LoginPage.tsx        # Login/signup page
+    LoginPage.tsx        # Login/signup/forgot-password page
+    ResetPasswordPage.tsx # Password reset form (from email link)
+    DashboardPage.tsx    # Project list (/dashboard)
+    ProjectWorkspace.tsx # IFC compare/audit workspace (/project/:id)
+    SettingsPage.tsx     # Account, subscription, language, usage, webhooks, API keys
   hooks/
     useCredits.ts        # Credit balance hook
+    useProjects.ts       # Project CRUD hook
+    useProjectFiles.ts   # Project file upload/list hook
+    useVOHistory.ts      # VO comparison history hook
+    useSubscription.ts   # User subscription + plan hook
+    useCopilotHistory.ts # Chat message persistence per conversation
+    useCopilotConversations.ts  # Conversation CRUD
+    useCopilotMemory.ts  # Cross-session memory with RAG search
+    useAnalysisResults.ts # Analysis result storage
+    useFileVersions.ts   # File version management
+    useWebhooks.ts       # Webhook CRUD + dispatch
+    useApiKeys.ts        # API key generation + revocation
+  locales/
+    zh/translation.json  # Chinese translations (default)
+    en/translation.json  # English translations
+    ms/translation.json  # Bahasa Melayu translations
 supabase/
   config.toml            # Supabase CLI config
   seed/                  # Knowledge base seed data (agent KB)
-  sql/                   # Database scripts
+  sql/                   # Database migration scripts (all preserved)
   functions/
     agent-proxy/         # NVIDIA NIM agent proxy
     create-checkout/     # Stripe one-time payment checkout session
     stripe-webhook/      # Stripe webhook handler
+    embed-bq/            # BQ embedding generation (pgvector)
 ```
+
+## Routing (React Router v7)
+- `/login` → LoginPage
+- `/reset-password` → ResetPasswordPage
+- `/dashboard` → DashboardPage (project list)
+- `/project/:id` → ProjectWorkspace
+- `/settings` → SettingsPage
 
 ## Key Types
 ```typescript
 type ActiveTab = 'overview' | 'valuation' | 'copilot' | 'audit';
 type ModelLoadState = 'idle' | 'loading' | 'ready' | 'error';
 type AuditState = 'idle' | 'running' | 'done' | 'error';
+type PlanName = 'free' | 'pro' | 'enterprise';
 ```
+
+## V3 Cleanup — What Was Removed
+Only genuinely unused artifacts were removed in the V3 cleanup:
+- Large IFC sample files (3 files, ~2.7M lines) — small test fixtures retained
+- Legacy planning docs (9 files) and V2 docs directory
+- `.superpowers/` and `.claude/` AI tool working directories
+- `src/agent/batch-processor.ts` — unused multi-project batch
+- `src/agent/training-collector.ts` — unused fine-tune pipeline
+- `supabase/functions/create-subscription/` — unused Stripe subscription
+- `supabase/functions/dispatch-webhook/` — unused webhook dispatcher
+- `supabase/functions/public-api/` — unused REST API
+- npm deps: `@google/genai`, `better-sqlite3`, `express`, `dotenv`, `motion`
 
 ## Conventions
 
@@ -122,6 +182,7 @@ type AuditState = 'idle' | 'running' | 'done' | 'error';
 - Max upload size: 100MB (MAX_IFC_SIZE in App.tsx)
 - Parsing is client-side via web-ifc WASM
 - `BimEngine.getIfcHandle()` returns `{ api, modelID }` for audit
+- Test fixtures: `basin-tessellation.ifc` (base), `V2_basin.ifc` (revision)
 
 ### Audit Engine
 - `runAudit({ api, modelID, config? })` is synchronous — wrap in setTimeout for UI
@@ -134,3 +195,4 @@ type AuditState = 'idle' | 'running' | 'done' | 'error';
 - Do not add new npm dependencies without discussing first
 - Do not use `any` type — use proper interfaces or `unknown`
 - Do not remove the ErrorBoundary wrapper in main.tsx
+- Do not delete SQL migration files without confirming the new architecture doesn't need them

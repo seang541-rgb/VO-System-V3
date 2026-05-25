@@ -26,5 +26,7 @@ AGENTS.md
 
 # Binary assets (managed outside git)
 *.ifc
+!basin-tessellation.ifc
+!V2_basin.ifc
 *.xlsx
 !package-lock.json

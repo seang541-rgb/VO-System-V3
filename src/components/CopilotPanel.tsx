@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles, Send, RefreshCw, Wrench, Loader2, Brain } from 'lucide-react';
-import { AgentSession, type AgentEvent, type OpenAIMessage } from '../agent/agent-client';
+import { Sparkles, Send, RefreshCw, Wrench, Loader2, Brain, Plus, MessageSquare, ChevronDown, UserCog, Lightbulb, X } from 'lucide-react';
+import { AgentSession, type AgentEvent, type OpenAIMessage, type ExtractedMemory } from '../agent/agent-client';
 import type { ToolContext } from '../agent/tools';
+import { useCopilotHistory } from '../hooks/useCopilotHistory';
+import { useCopilotConversations } from '../hooks/useCopilotConversations';
+import { useCopilotMemory, type MemoryCategory } from '../hooks/useCopilotMemory';
+import { AGENT_ROLES, type AgentRole } from '../agent/roles';
+import { analyzeWorkspace, type ProactiveSuggestion } from '../agent/proactive-discovery';
 
 interface ChatEntry {
   id: string;
@@ -13,6 +18,8 @@ interface ChatEntry {
 interface CopilotPanelProps {
   toolContext: ToolContext;
   signedIn: boolean;
+  projectId?: string;
+  userId?: string;
   onCreditsUpdate?: (balance: number) => void;
 }
 
@@ -31,18 +38,35 @@ function truncate(str: string, n = 400) {
   return str.length > n ? `${str.slice(0, n)}…` : str;
 }
 
-export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }: CopilotPanelProps) {
+export default function CopilotPanel({ toolContext, signedIn, projectId, userId, onCreditsUpdate }: CopilotPanelProps) {
   const sessionRef = useRef<AgentSession | null>(null);
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [activeToolLabel, setActiveToolLabel] = useState<string | null>(null);
   const [agentStep, setAgentStep] = useState(0);
+  const [showConvList, setShowConvList] = useState(false);
+  const [showRoleMenu, setShowRoleMenu] = useState(false);
+  const [activeRole, setActiveRole] = useState<AgentRole | null>(null);
+  const [suggestions, setSuggestions] = useState<ProactiveSuggestion[]>([]);
+  const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
+  const historyRestoredRef = useRef(false);
+
+  const { conversations, activeId: activeConvId, create: createConv, switchTo: switchConv, remove: removeConv } = useCopilotConversations(projectId);
+  const { restoredMessages, persistMessage, clearHistory } = useCopilotHistory(projectId, activeConvId);
+  const { buildMemoryPrompt, addMemory } = useCopilotMemory(userId);
 
   const baseReady = toolContext.baseComponents.length > 0;
   const revReady = toolContext.revisionComponents.length > 0;
   const compareReady = !!toolContext.voResults;
+
+  // Proactive suggestions — recalculate when workspace state changes
+  useEffect(() => {
+    const newSuggestions = analyzeWorkspace(toolContext)
+      .filter((s) => !dismissedSuggestions.has(s.id));
+    setSuggestions(newSuggestions);
+  }, [toolContext, dismissedSuggestions]);
 
   useEffect(() => {
     if (!sessionRef.current) {
@@ -50,7 +74,42 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
     } else {
       sessionRef.current.updateContext(toolContext);
     }
-  }, [toolContext]);
+    // Inject memory, role, persistence, and memory extraction callbacks
+    sessionRef.current.setMemoryPrompt(buildMemoryPrompt());
+    sessionRef.current.setRole(activeRole?.id ?? null);
+    sessionRef.current.setOnPersistMessage((msg: OpenAIMessage) => {
+      void persistMessage(msg);
+    });
+    sessionRef.current.setOnMemoryExtracted((memories: ExtractedMemory[]) => {
+      for (const m of memories) {
+        void addMemory(m.category as MemoryCategory, m.content, projectId);
+      }
+    });
+  }, [toolContext, buildMemoryPrompt, persistMessage, addMemory, projectId, activeRole]);
+
+  // Restore chat history from DB on first load
+  useEffect(() => {
+    if (historyRestoredRef.current || restoredMessages.length === 0) return;
+    historyRestoredRef.current = true;
+
+    // Rebuild chat entries from restored messages
+    const restored: ChatEntry[] = [];
+    for (const msg of restoredMessages) {
+      if (msg.role === 'user' && msg.content) {
+        restored.push({ id: newId(), kind: 'user', text: msg.content });
+      } else if (msg.role === 'assistant' && msg.content) {
+        restored.push({ id: newId(), kind: 'assistant', text: msg.content });
+      } else if (msg.role === 'tool' && msg.content) {
+        restored.push({ id: newId(), kind: 'tool', text: 'tool result', meta: truncate(msg.content, 200) });
+      }
+    }
+    setEntries(restored);
+
+    // Restore agent session messages
+    if (sessionRef.current) {
+      sessionRef.current.restoreMessages(restoredMessages);
+    }
+  }, [restoredMessages]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -72,6 +131,12 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
       }
       if (!sessionRef.current) sessionRef.current = new AgentSession(toolContext);
       else sessionRef.current.updateContext(toolContext);
+
+      // Auto-create conversation on first message if none exists
+      if (!activeConvId && projectId) {
+        const title = trimmed.length > 40 ? trimmed.slice(0, 40) + '…' : trimmed;
+        await createConv(title);
+      }
 
       pushEntry({ id: newId(), kind: 'user', text: trimmed });
       setInput('');
@@ -136,6 +201,28 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
     setEntries([]);
     setActiveToolLabel(null);
     setAgentStep(0);
+    historyRestoredRef.current = false;
+    void clearHistory();
+  };
+
+  const handleNewConversation = async () => {
+    sessionRef.current?.reset();
+    setEntries([]);
+    setActiveToolLabel(null);
+    setAgentStep(0);
+    historyRestoredRef.current = false;
+    setShowConvList(false);
+    await createConv();
+  };
+
+  const handleSwitchConversation = (id: string) => {
+    sessionRef.current?.reset();
+    setEntries([]);
+    setActiveToolLabel(null);
+    setAgentStep(0);
+    historyRestoredRef.current = false;
+    switchConv(id);
+    setShowConvList(false);
   };
 
   const statusLine = useMemo(() => {
@@ -158,15 +245,115 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
               <div className="text-[11px] text-slate-400">{statusLine}</div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleReset}
-            disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-600 bg-slate-800 px-2.5 py-1.5 text-xs text-slate-300 hover:border-slate-500 hover:text-white disabled:opacity-50"
-          >
-            <RefreshCw className="h-3 w-3" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {/* Role selector */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowRoleMenu((v) => !v)}
+                disabled={busy}
+                title={activeRole ? `Role: ${activeRole.nameCn}` : 'Select role'}
+                className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs disabled:opacity-50 ${
+                  activeRole
+                    ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300 hover:border-emerald-400'
+                    : 'border-slate-600 bg-slate-800 text-slate-300 hover:border-slate-500'
+                }`}
+              >
+                <UserCog className="h-3 w-3" />
+                {activeRole && <span className="max-w-[4rem] truncate">{activeRole.nameCn}</span>}
+              </button>
+              {showRoleMenu && (
+                <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-xl border border-slate-700 bg-slate-900/95 p-1.5 shadow-xl backdrop-blur">
+                  {activeRole && (
+                    <button
+                      type="button"
+                      onClick={() => { setActiveRole(null); setShowRoleMenu(false); }}
+                      className="mb-1 w-full rounded-lg px-3 py-2 text-left text-xs text-slate-400 hover:bg-slate-800 hover:text-white"
+                    >
+                      ✕ 清除角色
+                    </button>
+                  )}
+                  {AGENT_ROLES.map((role) => (
+                    <button
+                      key={role.id}
+                      type="button"
+                      onClick={() => { setActiveRole(role); setShowRoleMenu(false); }}
+                      className={`w-full rounded-lg px-3 py-2 text-left text-xs ${
+                        activeRole?.id === role.id
+                          ? 'bg-emerald-600/20 text-emerald-300'
+                          : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                      }`}
+                    >
+                      <div className="font-semibold">{role.nameCn} <span className="font-normal text-slate-500">{role.name}</span></div>
+                      <div className="mt-0.5 text-[10px] text-slate-500">{role.description}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleNewConversation()}
+              disabled={busy}
+              title="New conversation"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-600 bg-slate-800 px-2 py-1.5 text-xs text-slate-300 hover:border-blue-500/50 hover:text-blue-300 disabled:opacity-50"
+            >
+              <Plus className="h-3 w-3" />
+            </button>
+            {conversations.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowConvList((v) => !v)}
+                disabled={busy}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-600 bg-slate-800 px-2 py-1.5 text-xs text-slate-300 hover:border-slate-500 hover:text-white disabled:opacity-50"
+              >
+                <MessageSquare className="h-3 w-3" />
+                <span>{conversations.length}</span>
+                <ChevronDown className={`h-3 w-3 transition-transform ${showConvList ? 'rotate-180' : ''}`} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-600 bg-slate-800 px-2.5 py-1.5 text-xs text-slate-300 hover:border-slate-500 hover:text-white disabled:opacity-50"
+            >
+              <RefreshCw className="h-3 w-3" />
+            </button>
+          </div>
         </div>
+        {showConvList && conversations.length > 0 && (
+          <div className="mt-2 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900/90 p-1.5">
+            {conversations.map((c) => (
+              <div
+                key={c.id}
+                className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs cursor-pointer ${
+                  c.id === activeConvId
+                    ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleSwitchConversation(c.id)}
+                  className="flex-1 truncate text-left"
+                >
+                  {c.title}
+                </button>
+                {c.id !== activeConvId && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); void removeConv(c.id); }}
+                    className="ml-2 text-slate-600 hover:text-red-400"
+                    title="Delete"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
@@ -190,6 +377,52 @@ export default function CopilotPanel({ toolContext, signedIn, onCreditsUpdate }:
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Proactive suggestions */}
+        {suggestions.length > 0 && !busy && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-400/80">
+              <Lightbulb className="h-3 w-3" /> 建议操作
+            </div>
+            {suggestions.slice(0, 3).map((s) => (
+              <div
+                key={s.id}
+                className={`flex items-start gap-2 rounded-xl border px-3 py-2.5 ${
+                  s.priority === 'high'
+                    ? 'border-amber-500/30 bg-amber-500/5'
+                    : 'border-slate-700/50 bg-slate-800/40'
+                }`}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold text-slate-200">{s.title}</div>
+                  <div className="mt-0.5 text-[11px] text-slate-400">{s.description}</div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {s.action && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDismissedSuggestions((prev) => new Set([...prev, s.id]));
+                        void handleSend(s.action!);
+                      }}
+                      className="rounded-lg bg-blue-600/80 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-500"
+                    >
+                      执行
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setDismissedSuggestions((prev) => new Set([...prev, s.id]))}
+                    className="rounded p-0.5 text-slate-600 hover:text-slate-300"
+                    title="Dismiss"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

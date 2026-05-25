@@ -1,0 +1,127 @@
+{
+  "app": {
+    "name": "Idea Nest · VO Copilot",
+    "tagline": "变更单与合约索赔智能体"
+  },
+  "nav": {
+    "dashboard": "项目面板",
+    "settings": "设置",
+    "signOut": "退出登录"
+  },
+  "dashboard": {
+    "title": "我的项目",
+    "newProject": "新建项目",
+    "noProjects": "暂无项目，点击右上角新建",
+    "activeProjects": "进行中项目",
+    "comparisonsThisMonth": "本月比对次数",
+    "lastComparison": "上次比对",
+    "files": "个文件",
+    "archived": "已归档"
+  },
+  "project": {
+    "createTitle": "新建项目",
+    "name": "项目名称",
+    "namePlaceholder": "请输入项目名称",
+    "description": "项目描述",
+    "descriptionPlaceholder": "请输入项目描述（选填）",
+    "create": "创建",
+    "cancel": "取消",
+    "archive": "归档",
+    "delete": "删除"
+  },
+  "workspace": {
+    "files": "文件",
+    "uploadIfc": "上传 IFC",
+    "voHistory": "变更单历史",
+    "noHistory": "暂无变更单记录",
+    "base": "基准版本",
+    "revision": "修订版本",
+    "runCompare": "运行比对",
+    "runAudit": "运行审计",
+    "exportExcel": "导出 Excel",
+    "exportPdf": "导出 PDF",
+    "bqTemplate": "工料清单模板"
+  },
+  "copilot": {
+    "title": "VO Copilot",
+    "thinking": "Copilot 正在思考…",
+    "toolRunning": "工具运行中…",
+    "analyzing": "分析中…",
+    "send": "发送",
+    "reset": "重置对话",
+    "placeholder": "输入问题，例如：本次变更对造价有何影响？",
+    "loginRequired": "请登录后使用 Copilot",
+    "creditNote": "每次查询消耗 1 积分"
+  },
+  "settings": {
+    "title": "设置",
+    "account": "账户",
+    "email": "电子邮件",
+    "subscription": "订阅",
+    "currentPlan": "当前套餐",
+    "upgrade": "升级",
+    "managePlan": "管理订阅",
+    "language": "语言",
+    "usage": "用量",
+    "comparisonsThisMonth": "本月比对次数",
+    "storageUsed": "已用存储空间"
+  },
+  "plans": {
+    "free": "免费版",
+    "pro": "专业版",
+    "enterprise": "企业版",
+    "perMonth": "/ 月"
+  },
+  "common": {
+    "loading": "加载中…",
+    "save": "保存",
+    "cancel": "取消",
+    "confirm": "确认",
+    "error": "出错了",
+    "retry": "重试",
+    "back": "返回",
+    "components": "构件",
+    "ready": "就绪",
+    "pending": "待处理",
+    "parsing": "解析中",
+    "noData": "暂无数据"
+  },
+  "status": {
+    "baseIfc": "基准 IFC",
+    "revisionIfc": "修订 IFC",
+    "comparison": "比对结果"
+  },
+  "audit": {
+    "title": "合规审计",
+    "running": "审计运行中…",
+    "complete": "审计完成",
+    "failed": "审计失败"
+  },
+  "billing": {
+    "credits": "积分",
+    "noCredits": "积分不足",
+    "topUp": "充值积分"
+  },
+  "welcome": {
+    "title": "你好！需要什么帮助？",
+    "subtitle": "IFC 智能分析平台",
+    "cardAudit": "快速算量审计",
+    "cardAuditDesc": "IFC 工程量提取",
+    "cardCompare": "VO 对比分析",
+    "cardCompareDesc": "变更单差异比对",
+    "cardCopilot": "AI Copilot",
+    "cardCopilotDesc": "智能分析助手",
+    "cardExport": "导出报告",
+    "cardExportDesc": "Excel 和 PDF 导出"
+  },
+  "toast": {
+    "projectCreated": "项目已创建",
+    "projectArchived": "项目已归档",
+    "fileUploaded": "文件上传成功",
+    "comparisonSaved": "比对结果已保存",
+    "exportComplete": "导出完成",
+    "voComplete": "变更单分析完成",
+    "auditComplete": "审计完成",
+    "error": "操作失败，请重试"
+  }
+}
