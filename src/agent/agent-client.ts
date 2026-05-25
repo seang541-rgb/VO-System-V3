@@ -29,6 +29,37 @@ export type AgentEvent =
   | { kind: 'credits'; balance: number | null }
   | { kind: 'error'; message: string };
 
+export type AgentEvidenceType =
+  | 'comparison'
+  | 'commercial_summary'
+  | 'contract_assessment'
+  | 'audit'
+  | 'report'
+  | 'knowledge_lookup';
+
+export interface AgentExecutionTracker {
+  startRun: (input: { request: string; roleId: string | null }) => Promise<string | null>;
+  completeRun: (runId: string, status: 'completed' | 'failed' | 'cancelled', output: string) => Promise<void>;
+  recordStep: (
+    runId: string,
+    step: {
+      sequenceNo: number;
+      stepType: 'tool' | 'assistant' | 'system';
+      toolName?: string;
+      status: 'completed' | 'failed' | 'rejected';
+      input?: unknown;
+      output?: unknown;
+      durationMs?: number;
+    },
+  ) => Promise<string | null>;
+  recordEvidence: (
+    runId: string,
+    stepId: string | null,
+    evidence: { type: AgentEvidenceType; title: string; payload: unknown },
+  ) => Promise<void>;
+  requestApproval: (runId: string, actionType: string, payload: Record<string, unknown>) => Promise<boolean>;
+}
+
 // ── System prompt ─────────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `You are "IFC Copilot", an embedded assistant inside the VO System — a browser-based tool for comparing IFC building models and generating Variation Order (VO) substantiation workbooks for QS / construction professionals.
@@ -242,12 +273,40 @@ function extractAssistantMessage(response: unknown): OpenAIMessage | null {
 
 // ── AgentSession ──────────────────────────────────────────────────────────────
 
+const APPROVAL_GATED_TOOLS = new Set(['export_vo_excel', 'generate_report']);
+
+function evidenceForTool(name: string, result: unknown): { type: AgentEvidenceType; title: string; payload: unknown } | null {
+  if (!result || typeof result !== 'object' || 'error' in result) return null;
+
+  switch (name) {
+    case 'compare_ifc':
+      return { type: 'comparison', title: 'IFC comparison result', payload: result };
+    case 'summarize_commercial_impact':
+      return { type: 'commercial_summary', title: 'Commercial impact summary', payload: result };
+    case 'analyze_contract_clause':
+      return { type: 'contract_assessment', title: 'Contract clause assessment packet', payload: result };
+    case 'audit_ifc':
+      return { type: 'audit', title: 'IFC audit extraction', payload: result };
+    case 'export_vo_excel':
+      return { type: 'report', title: 'VO Excel workbook generated', payload: result };
+    case 'generate_report':
+      return { type: 'report', title: 'VO PDF report generated', payload: result };
+    case 'lookup_regulation':
+    case 'lookup_measurement_code':
+    case 'get_vo_template':
+      return { type: 'knowledge_lookup', title: `${name} result`, payload: result };
+    default:
+      return null;
+  }
+}
+
 export class AgentSession {
   private messages: OpenAIMessage[] = [];
   private memoryPrompt = '';
   private activeRoleId: string | null = null;
   private onPersistMessage: ((msg: OpenAIMessage) => void) | null = null;
   private onMemoryExtracted: ((memories: ExtractedMemory[]) => void) | null = null;
+  private executionTracker: AgentExecutionTracker | null = null;
   private contextManager = new ContextManager();
 
   constructor(private ctx: ToolContext) {}
@@ -280,6 +339,10 @@ export class AgentSession {
     this.onMemoryExtracted = cb;
   }
 
+  setExecutionTracker(tracker: AgentExecutionTracker | null) {
+    this.executionTracker = tracker;
+  }
+
   /** Restore messages from DB (called on project load) */
   restoreMessages(messages: OpenAIMessage[]) {
     this.messages = [...messages];
@@ -295,6 +358,8 @@ export class AgentSession {
   }
 
   async send(userText: string, onEvent: (event: AgentEvent) => void): Promise<string> {
+    const tracker = this.executionTracker;
+    const runId = await tracker?.startRun({ request: userText, roleId: this.activeRoleId }) ?? null;
     const userMsg: OpenAIMessage = { role: 'user', content: userText };
     this.messages.push(userMsg);
     this.onPersistMessage?.(userMsg);
@@ -303,6 +368,7 @@ export class AgentSession {
     const seenCallKeys = new Set<string>();
     let prerequisiteFailed = false;
     let toolStep = 0;
+    let ledgerStep = 0;
     let consecutiveEmptyHops = 0;
     let turnId: string | null = null;
 
@@ -329,6 +395,7 @@ export class AgentSession {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         onEvent({ kind: 'error', message });
+        if (runId) await tracker?.completeRun(runId, 'failed', message);
         throw err;
       }
 
@@ -338,6 +405,7 @@ export class AgentSession {
       const assistantMsg = extractAssistantMessage(proxyResult.response);
       if (!assistantMsg) {
         onEvent({ kind: 'error', message: 'Empty model response.' });
+        if (runId) await tracker?.completeRun(runId, 'failed', 'Empty model response.');
         return '';
       }
 
@@ -352,6 +420,15 @@ export class AgentSession {
         const { cleanText, memories } = parseMemoryExtracts(rawText);
         if (cleanText) onEvent({ kind: 'assistant_text', text: cleanText });
         if (memories.length > 0) this.onMemoryExtracted?.(memories);
+        if (runId) {
+          await tracker?.recordStep(runId, {
+            sequenceNo: ++ledgerStep,
+            stepType: 'assistant',
+            status: 'completed',
+            output: { text: cleanText },
+          });
+          await tracker?.completeRun(runId, 'completed', cleanText);
+        }
         return cleanText;
       }
 
@@ -363,7 +440,9 @@ export class AgentSession {
       if (toolCalls.length === 0 && !rawText) {
         consecutiveEmptyHops++;
         if (consecutiveEmptyHops >= 2) {
-          onEvent({ kind: 'error', message: 'Agent produced empty responses. Stopping.' });
+          const message = 'Agent produced empty responses. Stopping.';
+          onEvent({ kind: 'error', message });
+          if (runId) await tracker?.completeRun(runId, 'failed', message);
           return '';
         }
         continue;
@@ -393,10 +472,27 @@ export class AgentSession {
           };
         } else {
           seenCallKeys.add(callKey);
-          try {
-            result = await executeAgentTool(name, args, this.ctx);
-          } catch (err) {
-            result = { error: err instanceof Error ? err.message : String(err) };
+          let mayExecute = true;
+          if (APPROVAL_GATED_TOOLS.has(name)) {
+            if (!tracker || !runId) {
+              result = { error: 'APPROVAL_UNAVAILABLE: Formal outputs require an auditable project run.' };
+              mayExecute = false;
+            } else {
+              const approved = await tracker.requestApproval(runId, name, args);
+              if (!approved) {
+                result = {
+                  error: `APPROVAL_REJECTED: The user declined ${name}. Do not retry unless asked again.`,
+                };
+                mayExecute = false;
+              }
+            }
+          }
+          if (mayExecute) {
+            try {
+              result = await executeAgentTool(name, args, this.ctx);
+            } catch (err) {
+              result = { error: err instanceof Error ? err.message : String(err) };
+            }
           }
         }
 
@@ -404,17 +500,43 @@ export class AgentSession {
 
         if (result && typeof result === 'object' && 'error' in result) {
           const errStr = String((result as Record<string, unknown>).error ?? '');
-          if (errStr.includes('PREREQUISITE_NOT_MET')) {
+          if (
+            errStr.includes('PREREQUISITE_NOT_MET')
+            || errStr.includes('APPROVAL_REJECTED')
+            || errStr.includes('APPROVAL_UNAVAILABLE')
+          ) {
             prerequisiteFailed = true;
           }
         }
 
+        const durationMs = Math.round(performance.now() - started);
         onEvent({
           kind: 'tool_end',
           name,
           result,
-          durationMs: Math.round(performance.now() - started),
+          durationMs,
         });
+        if (runId) {
+          const outputError =
+            result && typeof result === 'object' && 'error' in result
+              ? String((result as Record<string, unknown>).error ?? '')
+              : '';
+          const stepId = await tracker?.recordStep(runId, {
+            sequenceNo: ++ledgerStep,
+            stepType: 'tool',
+            toolName: name,
+            status: outputError.includes('APPROVAL_REJECTED')
+              ? 'rejected'
+              : outputError
+                ? 'failed'
+                : 'completed',
+            input: args,
+            output: result,
+            durationMs,
+          }) ?? null;
+          const evidence = evidenceForTool(name, result);
+          if (evidence) await tracker?.recordEvidence(runId, stepId, evidence);
+        }
         const toolMsg: OpenAIMessage = {
           role: 'tool',
           tool_call_id: tc.id,
@@ -427,6 +549,7 @@ export class AgentSession {
 
     const msg = `Agent completed ${toolStep} tool steps across ${MAX_HOPS} reasoning hops.`;
     onEvent({ kind: 'error', message: msg });
+    if (runId) await tracker?.completeRun(runId, 'failed', msg);
     return msg;
   }
 }

@@ -27,11 +27,17 @@ Apply the SQL scripts in Supabase SQL Editor in this order:
    read-only subscription access.
 4. `supabase/sql/v2-agent-all-migrations.sql` for conversations, memory, unit
    rates, webhooks, API keys, and the remaining Agent tables.
+5. `supabase/migrations/20260525164241_agent_run_ledger.sql` for persisted
+   Agent runs, tool evidence, and approval records for formal output actions.
 
 The billing prerequisites script creates `user_credits`, grants five credits
 to existing and newly registered users, and creates both `consume_credit()` and
 `consume_agent_turn_credit(...)`. Subscription rows are readable by users but
 must only be written by trusted billing code using the service role.
+
+The Agent run ledger records each cloud Copilot request and its tool steps.
+`export_vo_excel` and `generate_report` require a recorded human approval
+before the Agent is allowed to create a formal downloadable output.
 
 ## Edge Functions
 

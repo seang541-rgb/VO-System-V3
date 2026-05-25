@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles, Send, RefreshCw, Wrench, Loader2, Brain, Plus, MessageSquare, ChevronDown, UserCog, Lightbulb, X } from 'lucide-react';
+import { Sparkles, Send, RefreshCw, Wrench, Loader2, Brain, Plus, MessageSquare, ChevronDown, UserCog, Lightbulb, X, ShieldCheck } from 'lucide-react';
 import { AgentSession, type AgentEvent, type OpenAIMessage, type ExtractedMemory } from '../agent/agent-client';
 import type { ToolContext } from '../agent/tools';
 import { useCopilotHistory } from '../hooks/useCopilotHistory';
 import { useCopilotConversations } from '../hooks/useCopilotConversations';
 import { useCopilotMemory, type MemoryCategory } from '../hooks/useCopilotMemory';
+import { useAgentRuns } from '../hooks/useAgentRuns';
 import { AGENT_ROLES, type AgentRole } from '../agent/roles';
 import { analyzeWorkspace, type ProactiveSuggestion } from '../agent/proactive-discovery';
 
@@ -56,6 +57,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
   const { conversations, activeId: activeConvId, create: createConv, switchTo: switchConv, remove: removeConv } = useCopilotConversations(projectId);
   const { restoredMessages, persistMessage, clearHistory } = useCopilotHistory(projectId, activeConvId);
   const { buildMemoryPrompt, addMemory } = useCopilotMemory(userId);
+  const { runs, pendingApproval, tracker, decideApproval } = useAgentRuns(projectId, userId, activeConvId);
 
   const baseReady = toolContext.baseComponents.length > 0;
   const revReady = toolContext.revisionComponents.length > 0;
@@ -85,7 +87,8 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
         void addMemory(m.category as MemoryCategory, m.content, projectId);
       }
     });
-  }, [toolContext, buildMemoryPrompt, persistMessage, addMemory, projectId, activeRole]);
+    sessionRef.current.setExecutionTracker(tracker);
+  }, [toolContext, buildMemoryPrompt, persistMessage, addMemory, projectId, activeRole, tracker]);
 
   // Restore chat history from DB on first load
   useEffect(() => {
@@ -355,6 +358,65 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
           </div>
         )}
       </div>
+
+      {pendingApproval && (
+        <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-3">
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-bold uppercase tracking-[0.16em] text-amber-300">Approval Required</div>
+              <div className="mt-1 text-sm text-slate-100">
+                Copilot wants to execute <span className="font-mono text-amber-200">{pendingApproval.actionType}</span>.
+              </div>
+              <div className="mt-1 text-xs text-slate-400">
+                This creates a formal downloadable output. The decision is recorded in the run ledger.
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void decideApproval(true)}
+                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500"
+                >
+                  Approve Output
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void decideApproval(false)}
+                  className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-700"
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {runs.length > 0 && (
+        <div className="border-b border-slate-700/70 bg-slate-900 px-4 py-2">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            <ShieldCheck className="h-3 w-3" />
+            Recent Agent Runs
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {runs.slice(0, 3).map((run) => (
+              <div key={run.id} className="flex max-w-full items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/60 px-2.5 py-1 text-[11px]">
+                <span className={`h-1.5 w-1.5 rounded-full ${
+                  run.status === 'completed'
+                    ? 'bg-emerald-400'
+                    : run.status === 'failed' || run.status === 'cancelled'
+                      ? 'bg-red-400'
+                      : run.status === 'waiting_approval'
+                        ? 'bg-amber-300'
+                        : 'bg-blue-400'
+                }`} />
+                <span className="max-w-[11rem] truncate text-slate-300">{run.user_request}</span>
+                <span className="uppercase text-slate-500">{run.status.replace('_', ' ')}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {entries.length === 0 && (
