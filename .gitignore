@@ -6,3 +6,20 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Supabase temp/linked project info
+supabase/.temp/
+
+# Claude Code local config
+.claude/
+
+# V1 archive (already in separate repo)
+V1-Release/
+
+# Generated templates (not source code)
+scripts/gen-seed-template.py
+scripts/gen-seed-template.mjs
+
+# Elder gods / agent system files
+AGENTS.md
+.elder-gods/

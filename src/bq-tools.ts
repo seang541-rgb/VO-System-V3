@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import type { BqLineItem } from './vo-diff-core';
+import { semanticBqMatch } from './bq-vector-match';
 
 export const DEFAULT_TEST_BQ_ITEMS: BqLineItem[] = [
   { itemReference: 'BQ/F/01', description: 'Normal concrete or structural item test rate', unit: 'm3', contractRate: 420 },
@@ -86,6 +87,57 @@ export function recommendBqMatches(items: BqLineItem[], qsLabel: string, section
     })
     .filter((item) => item.score > 0)
     .sort((left, right) => right.score - left.score || left.itemReference.localeCompare(right.itemReference))
+    .slice(0, limit);
+}
+
+export async function recommendBqMatchesHybrid(
+  items: BqLineItem[],
+  qsLabel: string,
+  sectionCode: string,
+  systemUnit: string,
+  projectId: string | null,
+  limit = 5,
+): Promise<BqRecommendation[]> {
+  const tokenResults = recommendBqMatches(items, qsLabel, sectionCode, systemUnit, limit * 2);
+
+  if (!projectId) return tokenResults.slice(0, limit);
+
+  let vectorResults: { itemReference: string; similarity: number }[] = [];
+  try {
+    vectorResults = await semanticBqMatch(projectId, qsLabel, limit * 2);
+  } catch {
+    return tokenResults.slice(0, limit);
+  }
+
+  const vectorMap = new Map(vectorResults.map((v) => [v.itemReference, v.similarity]));
+
+  const fused = tokenResults.map((r) => {
+    const vectorSim = vectorMap.get(r.itemReference) ?? 0;
+    const vectorBonus = Math.round(vectorSim * 50);
+    return {
+      ...r,
+      score: r.score + vectorBonus,
+      reasons: vectorBonus > 0
+        ? [...r.reasons, `vector similarity: ${(vectorSim * 100).toFixed(0)}%`]
+        : r.reasons,
+    };
+  });
+
+  for (const vr of vectorResults) {
+    if (!fused.some((f) => f.itemReference === vr.itemReference)) {
+      const matched = items.find((i) => i.itemReference === vr.itemReference);
+      if (matched) {
+        fused.push({
+          ...matched,
+          score: Math.round(vr.similarity * 50),
+          reasons: [`vector similarity: ${(vr.similarity * 100).toFixed(0)}%`],
+        });
+      }
+    }
+  }
+
+  return fused
+    .sort((a, b) => b.score - a.score || a.itemReference.localeCompare(b.itemReference))
     .slice(0, limit);
 }
 

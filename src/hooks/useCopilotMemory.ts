@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import type { ExtractedMemory } from '../agent/agent-client';
 
 export type MemoryCategory = 'general' | 'preference' | 'project_insight' | 'domain_knowledge';
 
@@ -102,5 +103,55 @@ export function useCopilotMemory(userId?: string) {
     return `\n\n--- LONG-TERM MEMORY (from previous sessions) ---\n${sections.join('\n\n')}`;
   }, [memories]);
 
-  return { memories, loading, addMemory, deleteMemory, buildMemoryPrompt, reload: loadMemories };
+  /** Batch-save memories extracted by the agent via <memory_extract> tags */
+  const saveExtractedMemories = useCallback(
+    async (extracted: ExtractedMemory[], sourceProjectId?: string) => {
+      if (!userId || extracted.length === 0) return;
+
+      for (const mem of extracted) {
+        // Deduplicate: skip if exact content already exists in same category
+        const dup = memories.find(
+          (m) => m.category === mem.category && m.content.toLowerCase() === mem.content.toLowerCase(),
+        );
+        if (dup) {
+          // Refresh timestamp so it stays relevant
+          await supabase
+            .from('copilot_memory')
+            .update({ updated_at: new Date().toISOString() })
+            .eq('id', dup.id);
+        } else {
+          await addMemory(mem.category, mem.content, sourceProjectId);
+        }
+      }
+      await loadMemories();
+    },
+    [userId, memories, addMemory, loadMemories],
+  );
+
+  /** Search memories relevant to a query (keyword-based RAG) */
+  const searchMemories = useCallback(
+    (query: string, limit = 5): MemoryEntry[] => {
+      if (!query.trim() || memories.length === 0) return [];
+      const tokens = query.toLowerCase().split(/\s+/).filter((t) => t.length > 2);
+      if (tokens.length === 0) return memories.slice(0, limit);
+
+      return memories
+        .map((m) => {
+          const text = m.content.toLowerCase();
+          const hits = tokens.filter((t) => text.includes(t)).length;
+          return { ...m, relevance: hits / tokens.length };
+        })
+        .filter((m) => m.relevance > 0)
+        .sort((a, b) => b.relevance - a.relevance)
+        .slice(0, limit);
+    },
+    [memories],
+  );
+
+  return {
+    memories, loading,
+    addMemory, deleteMemory,
+    saveExtractedMemories, searchMemories,
+    buildMemoryPrompt, reload: loadMemories,
+  };
 }

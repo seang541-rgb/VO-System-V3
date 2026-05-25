@@ -8,6 +8,8 @@ import type {
 } from '../BimEngine';
 import { buildCommercialBreakdown } from '../BimEngine';
 import { exportVoSubstantiationWorkbook } from '../vo-report';
+import { generateVoPdfReport } from '../report/pdf-generator';
+import type { OcrLanguage } from '../ocr/ocr-engine';
 import {
   fetchClause,
   fetchVoTemplate,
@@ -16,10 +18,12 @@ import {
   searchBimRegulations,
   searchMsStandards,
   searchUbbl,
+  searchUnitRates,
   type BimRegulationRow,
   type MeasurementCodeRow,
   type MsStandardRow,
   type UbblRow,
+  type UnitRateRow,
 } from './kb-lookups';
 
 // ── LLM-friendly row formatters ─────────────────────────────────────────────
@@ -101,13 +105,9 @@ export interface ToolContext {
   baseFileName: string | null;
   revisionFileName: string | null;
   runCompare: () => Promise<VoComparisonResults | null>;
-  /**
-   * Returns the web-ifc API + modelID for whichever IFC is currently in the
-   * 3D viewer (the last one loaded). Returns null if nothing is loaded.
-   */
   getActiveIfcHandle?: () => { api: any; modelID: number } | null;
-  /** Which slot is in the viewer right now ('base' | 'revision' | null). */
   activeIfcSlot?: 'base' | 'revision' | null;
+  ocrFile?: File | null;
 }
 
 export interface AnthropicToolSchema {
@@ -315,7 +315,133 @@ export const AGENT_TOOL_SCHEMAS: AnthropicToolSchema[] = [
       required: ['model'],
     },
   },
+  {
+    name: 'estimate_cost',
+    description:
+      'Look up Malaysian construction unit rates and estimate costs. Search the unit rate database by category (concrete, reinforcement, formwork, brickwork, etc.), free-text query, or region. Returns rates in MYR with min/max ranges. Use after audit_ifc or compare_ifc to price VO items.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        category: {
+          type: 'string',
+          enum: ['concrete', 'reinforcement', 'formwork', 'brickwork', 'plasterwork', 'painting', 'roofing', 'drainage', 'earthwork', 'other'],
+          description: 'Filter by material/trade category.',
+        },
+        query: {
+          type: 'string',
+          description: 'Free-text search for specific items (e.g. "Grade 30 slab", "T16 rebar", "half brick wall").',
+        },
+        region: {
+          type: 'string',
+          enum: ['national', 'klang_valley', 'johor', 'penang', 'sabah', 'sarawak', 'any'],
+          description: 'Filter by region. Default "national".',
+        },
+        limit: {
+          type: 'integer',
+          description: 'Max results (default 10, max 30).',
+        },
+      },
+    },
+  },
+  {
+    name: 'generate_report',
+    description:
+      'Generate and download a PDF Variation Order Substantiation Report. Includes cover page, executive summary, commercial impact table, and element lists. Requires a completed comparison via compare_ifc.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        projectName: {
+          type: 'string',
+          description: 'Project name for the cover page.',
+        },
+        preparedBy: {
+          type: 'string',
+          description: 'Name of the person who prepared the report.',
+        },
+      },
+    },
+  },
+  {
+    name: 'ocr_document',
+    description:
+      'Run OCR on an uploaded image (scan of BQ schedule, contract page, drawing markup, etc.) to extract text. Supports English and Chinese. Returns extracted text, line-by-line breakdown with confidence scores, and auto-detected BQ line items if present. The user must first upload the image — use the file from the workspace.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        language: {
+          type: 'string',
+          enum: ['eng', 'chi_sim', 'chi_tra', 'eng+chi_sim'],
+          description: 'OCR language. Default "eng+chi_sim" (English + Simplified Chinese).',
+        },
+        extractBq: {
+          type: 'boolean',
+          description: 'If true, attempt to parse BQ line items from the extracted text. Default true.',
+        },
+      },
+    },
+  },
 ];
+
+// ── Tool dependency metadata for the Router ─────────────────────────────────
+
+export interface ToolMeta {
+  name: string;
+  requires: ('base_loaded' | 'revision_loaded' | 'both_loaded' | 'comparison_done' | 'ifc_handle')[];
+  produces: ('comparison_done' | 'commercial_data' | 'audit_data' | 'excel_export')[];
+}
+
+export const TOOL_GRAPH: ToolMeta[] = [
+  { name: 'query_ifc',                  requires: [],                produces: [] },
+  { name: 'compare_ifc',                requires: ['both_loaded'],   produces: ['comparison_done'] },
+  { name: 'summarize_commercial_impact', requires: ['comparison_done'], produces: ['commercial_data'] },
+  { name: 'export_vo_excel',            requires: ['comparison_done'], produces: ['excel_export'] },
+  { name: 'analyze_contract_clause',    requires: ['comparison_done'], produces: [] },
+  { name: 'lookup_regulation',          requires: [],                produces: [] },
+  { name: 'lookup_measurement_code',    requires: [],                produces: [] },
+  { name: 'get_vo_template',            requires: [],                produces: [] },
+  { name: 'audit_ifc',                  requires: ['ifc_handle'],    produces: ['audit_data'] },
+  { name: 'estimate_cost',              requires: [],                produces: [] },
+  { name: 'generate_report',           requires: ['comparison_done'], produces: [] },
+  { name: 'ocr_document',             requires: [],                produces: [] },
+];
+
+function resolveAvailableCapabilities(ctx: ToolContext): Set<string> {
+  const caps = new Set<string>();
+  if (ctx.baseComponents.length > 0) caps.add('base_loaded');
+  if (ctx.revisionComponents.length > 0) caps.add('revision_loaded');
+  if (ctx.baseComponents.length > 0 && ctx.revisionComponents.length > 0) caps.add('both_loaded');
+  if (ctx.voResults) caps.add('comparison_done');
+  if (ctx.getActiveIfcHandle?.()) caps.add('ifc_handle');
+  return caps;
+}
+
+export function getAvailableTools(ctx: ToolContext): typeof OPENAI_TOOL_DEFINITIONS {
+  const caps = resolveAvailableCapabilities(ctx);
+  const available = new Set<string>();
+
+  for (const meta of TOOL_GRAPH) {
+    const satisfied = meta.requires.every((r) => caps.has(r));
+    if (satisfied) available.add(meta.name);
+  }
+
+  // Always include compare_ifc so the agent can trigger it (the tool itself returns a clear PREREQUISITE_NOT_MET)
+  available.add('compare_ifc');
+
+  return OPENAI_TOOL_DEFINITIONS.filter((t) => available.has(t.function.name));
+}
+
+export function buildToolRoutingHint(ctx: ToolContext): string {
+  const caps = resolveAvailableCapabilities(ctx);
+  const blocked: string[] = [];
+  for (const meta of TOOL_GRAPH) {
+    const missing = meta.requires.filter((r) => !caps.has(r));
+    if (missing.length > 0) {
+      blocked.push(`${meta.name} (needs: ${missing.join(', ')})`);
+    }
+  }
+  if (blocked.length === 0) return '\n\nAll tools are available.';
+  return `\n\n--- TOOL AVAILABILITY ---\nBlocked tools (prerequisites not met): ${blocked.join('; ')}.\nDo NOT call blocked tools — tell the user what action is needed instead.`;
+}
 
 // OpenAI-compatible tool definitions (used by NVIDIA NIM, OpenAI, and most OSS models)
 export const OPENAI_TOOL_DEFINITIONS = AGENT_TOOL_SCHEMAS.map((tool) => ({
@@ -729,6 +855,93 @@ export async function executeAgentTool(
           quantitySource: r.quantitySource,
         })),
       };
+    }
+
+    case 'estimate_cost': {
+      const category = typeof input.category === 'string' ? input.category : undefined;
+      const query = typeof input.query === 'string' ? input.query.trim() : undefined;
+      const region = typeof input.region === 'string' ? input.region : undefined;
+      const limit = typeof input.limit === 'number' ? Math.max(1, Math.min(30, Math.floor(input.limit))) : 10;
+
+      if (!category && !query) {
+        return {
+          error: 'Either `category` or `query` is required. STOP calling tools and ask the user what material or trade they want to price.',
+        };
+      }
+
+      try {
+        const rows = await searchUnitRates({ category, query, region, limit });
+        return {
+          category: category ?? 'any',
+          query: query ?? null,
+          region: region ?? 'national',
+          count: rows.length,
+          instructions: 'Present rates in a table. Always show the rate range (min–max) alongside the base rate. Quote the source and year. Rates are in MYR.',
+          rates: rows.map((r: UnitRateRow) => ({
+            description: r.description,
+            description_cn: r.description_cn,
+            itemCode: r.item_code,
+            unit: r.unit,
+            rate: r.rate_myr,
+            minRate: r.min_rate,
+            maxRate: r.max_rate,
+            region: r.region,
+            year: r.rate_year,
+            source: r.source,
+          })),
+        };
+      } catch (err) {
+        return { error: `Unit rate lookup failed: ${err instanceof Error ? err.message : String(err)}` };
+      }
+    }
+
+    case 'ocr_document': {
+      if (!ctx.ocrFile) {
+        return {
+          error: 'PREREQUISITE_NOT_MET: No image file available for OCR. STOP calling tools. Ask the user to upload an image (JPG, PNG, or PDF scan) via the workspace file panel.',
+        };
+      }
+      try {
+        const lang = (typeof input.language === 'string' ? input.language : 'eng+chi_sim') as OcrLanguage;
+        const extractBq = input.extractBq !== false;
+        const { runOcr, extractBqFromOcrText } = await import('../ocr/ocr-engine');
+        const result = await runOcr(ctx.ocrFile, lang);
+        const response: Record<string, unknown> = {
+          text: result.text.slice(0, 3000),
+          confidence: result.confidence,
+          lineCount: result.lines.length,
+          topLines: result.lines.slice(0, 20).map((l) => ({ text: l.text, confidence: l.confidence })),
+          elapsed: `${(result.elapsed / 1000).toFixed(1)}s`,
+        };
+        if (extractBq) {
+          const bqItems = extractBqFromOcrText(result.text);
+          response.detectedBqItems = bqItems.slice(0, 20);
+          response.bqItemCount = bqItems.length;
+        }
+        return response;
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
+    case 'generate_report': {
+      if (!ctx.voResults) {
+        return { error: 'No comparison results available. Run compare_ifc first.' };
+      }
+      try {
+        const projectName = typeof input.projectName === 'string' ? input.projectName : undefined;
+        const preparedBy = typeof input.preparedBy === 'string' ? input.preparedBy : undefined;
+        generateVoPdfReport(ctx.voResults, {
+          projectName,
+          baseModelName: ctx.baseFileName ?? undefined,
+          revisionModelName: ctx.revisionFileName ?? undefined,
+          pricingContext: ctx.bqContext,
+          preparedBy,
+        });
+        return { ok: true, note: 'PDF report generated and downloaded in the browser.' };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
     }
 
     default:

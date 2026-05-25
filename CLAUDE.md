@@ -11,7 +11,7 @@ Dual selling points: (A) instant audit/quantity takeoff, (B) VO comparison with 
 - **Payments**: Stripe (credit-based billing)
 - **IFC Parsing**: web-ifc (client-side, no server upload)
 - **3D Viewer**: Three.js + web-ifc-three
-- **AI Agent**: Google Gemini (`@google/genai`)
+- **AI Agent**: DeepSeek V4 Pro via NVIDIA NIM (OpenAI-compatible)
 - **Export**: xlsx (Excel), jspdf + jspdf-autotable (PDF)
 - **Notifications**: react-hot-toast (dark theme)
 - **Tests**: Vitest
@@ -53,9 +53,18 @@ src/
     storey.ts           # Storey detection
     summarize.ts        # Audit result summarization
   agent/
-    agent-client.ts     # Gemini AI agent client
-    tools.ts            # Agent tool definitions
-    kb-lookups.ts       # Knowledge base lookups
+    agent-client.ts     # ReAct AI agent (DeepSeek V4 Pro via NVIDIA NIM)
+    tools.ts            # 12 agent tools + dependency router
+    context-manager.ts  # Session context tracking across tool hops
+    kb-lookups.ts       # Knowledge base lookups (Supabase)
+    roles.ts            # Multi-role system (QS, Contract, Compliance, Reporter)
+    proactive-discovery.ts  # Workspace analysis → suggestion engine
+    training-collector.ts   # Fine-tune data collection pipeline
+    batch-processor.ts      # Multi-project batch operations
+  ocr/
+    ocr-engine.ts       # Tesseract.js OCR with BQ extraction
+  report/
+    pdf-generator.ts    # jsPDF VO substantiation report
   components/
     AppHeader.tsx        # Top nav bar (V1, sticky, h=57px)
     AppSidebar.tsx       # Left sidebar (V1, w=72, sticky below header)
@@ -80,13 +89,20 @@ src/
     ResetPasswordPage.tsx # Password reset form (from email link)
     DashboardPage.tsx    # Project list (/dashboard)
     ProjectWorkspace.tsx # IFC compare/audit workspace (/project/:id)
-    SettingsPage.tsx     # Account, subscription, language, usage (/settings)
+    SettingsPage.tsx     # Account, subscription, language, usage, webhooks, API keys (/settings)
   hooks/
     useCredits.ts        # Credit balance hook
     useProjects.ts       # Project CRUD hook
-    useProjectFiles.ts   # Project file upload/list hook
+    useProjectFiles.ts   # Project file upload/list hook (with roles: base/revision/bq/contract)
     useVOHistory.ts      # VO comparison history hook
     useSubscription.ts   # User subscription + plan hook
+    useCopilotHistory.ts # Chat message persistence per conversation
+    useCopilotConversations.ts  # Conversation CRUD
+    useCopilotMemory.ts  # Cross-session memory with RAG search
+    useAnalysisResults.ts # Analysis result storage
+    useFileVersions.ts   # File version management
+    useWebhooks.ts       # Webhook CRUD + dispatch
+    useApiKeys.ts        # API key generation + revocation
   locales/
     zh/translation.json  # Chinese translations (default)
     en/translation.json  # English translations
@@ -96,7 +112,10 @@ supabase/
     create-checkout/     # Stripe one-time payment checkout session
     create-subscription/ # Stripe subscription checkout session
     stripe-webhook/      # Stripe webhook handler
-    agent-proxy/         # Gemini agent proxy
+    agent-proxy/         # DeepSeek V4 Pro agent proxy (NVIDIA NIM)
+    embed-bq/            # BQ embedding generation (pgvector)
+    dispatch-webhook/    # Webhook event dispatcher
+    public-api/          # REST API for programmatic access
 ```
 
 ## Key Types

@@ -5,8 +5,8 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 
 const NVIDIA_ENDPOINT = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const DEFAULT_MODEL = 'meta/llama-3.3-70b-instruct';
-const MAX_TOKENS = 2048;
+const DEFAULT_MODEL = 'deepseek-ai/deepseek-v4-pro';
+const MAX_TOKENS = 4096;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

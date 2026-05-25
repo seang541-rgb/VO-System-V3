@@ -1,7 +1,9 @@
 import { supabase } from '../lib/supabase';
-import { OPENAI_TOOL_DEFINITIONS, executeAgentTool, type ToolContext } from './tools';
+import { OPENAI_TOOL_DEFINITIONS, executeAgentTool, getAvailableTools, buildToolRoutingHint, type ToolContext } from './tools';
+import { ContextManager } from './context-manager';
+import { buildRoleOverlay } from './roles';
 
-// ── OpenAI-compatible message types (used by NVIDIA NIM / Llama 3.3) ──────────
+// ── OpenAI-compatible message types (used by NVIDIA NIM / DeepSeek V4 Pro) ────
 
 export interface OpenAIToolCall {
   id: string;
@@ -17,10 +19,11 @@ export interface OpenAIMessage {
   name?: string;
 }
 
-// ── Agent events (unchanged shape so CopilotPanel needs no edits) ─────────────
+// ── Agent events ──────────────────────────────────────────────────────────────
 
 export type AgentEvent =
   | { kind: 'assistant_text'; text: string }
+  | { kind: 'thinking'; text: string; step: number; totalSteps: number | null }
   | { kind: 'tool_start'; name: string; input: Record<string, unknown> }
   | { kind: 'tool_end'; name: string; result: unknown; durationMs: number }
   | { kind: 'credits'; balance: number | null }
@@ -37,14 +40,26 @@ You help the user by:
 - Assessing whether a VO qualifies as a claim under a specific contract clause (analyze_contract_clause).
 - Driving the Excel export when the user asks for it.
 
+Agentic workflow (ReAct pattern — FOLLOW THIS):
+You operate in a Think → Act → Observe loop. For each user request:
+1. **Think**: Analyze the request, break it into sub-tasks, and state your plan briefly. For multi-step tasks, list the steps you'll take (e.g. "I'll: ① compare IFC files ② summarize commercial impact ③ check contract clause ④ generate report").
+2. **Act**: Call the appropriate tool for the current step.
+3. **Observe**: Read the tool result, assess if it succeeded, and decide the next step.
+4. **Repeat** Think → Act → Observe until all sub-tasks are complete.
+5. **Synthesize**: Once all data is gathered, produce a final comprehensive answer.
+
+When you have intermediate reasoning (between tool calls), output it as text — the user will see it as your thinking process. This helps them understand what you're doing.
+
+For simple questions (no tools needed), skip the loop and reply directly.
+
 Style:
 - Be concise and practical. Prefer tables or short bullet lists.
-- When you call tools, reason briefly about why, then read the tool result before drafting the reply.
+- When you call tools, show your reasoning briefly before calling them.
 - Use the user's preferred language (Chinese / English / mixed) based on their prompt.
 
 Tool failure handling (CRITICAL):
 - If any tool returns an error containing "PREREQUISITE_NOT_MET", STOP calling tools immediately. Do NOT try other tools to "work around" the problem. Reply in plain text and tell the user exactly what action they need to take (upload files, click a button, etc.).
-- Never call the same tool twice with identical arguments. Never call more than 3 tools per user turn unless the workflow legitimately requires it (e.g. compare_ifc → summarize_commercial_impact → export_vo_excel).
+- Never call the same tool twice with identical arguments. You may chain up to 8 tools per turn for complex multi-step workflows (e.g. compare_ifc → summarize_commercial_impact → analyze_contract_clause → export_vo_excel).
 - If a tool returns any other error, explain the issue to the user once and ask how to proceed — do not retry unless the user redirects you.
 
 Contract-clause analysis flow:
@@ -53,9 +68,11 @@ Contract-clause analysis flow:
 - Cite specific numbers from voSnapshot (e.g. "Net VO value of MYR X with Y EOT flags"). Never invent contract clause text — only quote what the user pasted.
 - Do not call analyze_contract_clause more than once for the same clause in a row; produce the assessment instead.
 
-Capabilities currently available (9 tools):
-- IFC workflows: query_ifc, compare_ifc, summarize_commercial_impact, audit_ifc, export_vo_excel
+Capabilities currently available (12 tools):
+- IFC workflows: query_ifc, compare_ifc, summarize_commercial_impact, audit_ifc, export_vo_excel, generate_report
 - Contract/regulatory: analyze_contract_clause, lookup_regulation, lookup_measurement_code, get_vo_template
+- Cost estimation: estimate_cost
+- Document processing: ocr_document
 
 Tool selection guidance:
 - For "what does Clause X say in JKR/PAM" → use analyze_contract_clause with contractType + clauseNumber (it now fetches from the knowledge base; user does not need to paste the clause).
@@ -67,6 +84,19 @@ Regulatory answer format (CRITICAL):
 - When lookup_regulation returns multiple matches, do NOT pick blindly. Read every "title" / "title_cn" carefully and choose the row whose by_law_number / standard_number is the closest fit to the user's specific question. Example: "minimum ceiling height for residential ROOMS" → By-Law 23 (habitable rooms, 2.75 m), NOT By-Law 25 (kitchen, 2.4 m).
 - ALWAYS quote the specific identifier in your reply: "UBBL Part V, By-Law 23" / "MS 1064:2014" / "JKR BIM Mandate 2017 (RM 100M threshold)". Never just say "Part V" without the by-law number.
 - If the user's question is ambiguous and multiple rows could fit, list 2-3 most relevant matches with their by-law numbers and ask the user which scenario they mean (residential / kitchen / bathroom / commercial).
+
+Common multi-step workflows (use these as templates when planning):
+- Full VO analysis: compare_ifc → summarize_commercial_impact → analyze_contract_clause → export_vo_excel / generate_report
+- Quick VO summary: compare_ifc → summarize_commercial_impact
+- Compliance check: lookup_regulation → lookup_measurement_code (if measurement context needed)
+- Audit + comparison: audit_ifc → compare_ifc → summarize_commercial_impact
+- VO letter draft: compare_ifc → summarize_commercial_impact → get_vo_template
+
+Tool dependency chain (the system enforces this automatically — blocked tools are removed from your options):
+- compare_ifc requires both IFC files loaded
+- summarize_commercial_impact / export_vo_excel / analyze_contract_clause / generate_report require compare_ifc to have run
+- audit_ifc requires an active IFC handle in the 3D viewer
+- query_ifc / lookup_regulation / lookup_measurement_code / get_vo_template have no prerequisites
 
 audit_ifc usage note: it operates on whichever IFC is currently in the 3D viewer (the last one loaded). If the user asks to audit the "base" but the "revision" is currently active (or vice versa), the tool returns a PREREQUISITE_NOT_MET error — relay that to the user verbatim.
 
@@ -148,7 +178,14 @@ function parseMemoryExtracts(text: string): { cleanText: string; memories: Extra
 
 async function callAgentProxy(
   messages: OpenAIMessage[],
-  options: { allowTools?: boolean; memoryPrompt?: string; dynamicContext?: string } = {},
+  options: {
+    allowTools?: boolean;
+    memoryPrompt?: string;
+    dynamicContext?: string;
+    availableTools?: typeof OPENAI_TOOL_DEFINITIONS;
+    routingHint?: string;
+    roleOverlay?: string;
+  } = {},
 ): Promise<{ response: unknown; credits_balance: number | null }> {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
@@ -161,9 +198,8 @@ async function callAgentProxy(
     '';
   const endpoint = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/agent-proxy`;
 
-  // Send empty tools array when caller wants to force a plain-text reply (no more tool calls).
   const allowTools = options.allowTools !== false;
-  const tools = allowTools ? OPENAI_TOOL_DEFINITIONS : [];
+  const tools = allowTools ? (options.availableTools ?? OPENAI_TOOL_DEFINITIONS) : [];
 
   const res = await fetch(endpoint, {
     method: 'POST',
@@ -175,7 +211,7 @@ async function callAgentProxy(
     body: JSON.stringify({
       messages,
       tools,
-      system: SYSTEM_PROMPT + (options.dynamicContext || '') + (options.memoryPrompt || ''),
+      system: SYSTEM_PROMPT + (options.roleOverlay || '') + (options.dynamicContext || '') + (options.routingHint || '') + (options.memoryPrompt || ''),
     }),
   });
 
@@ -206,8 +242,10 @@ function extractAssistantMessage(response: unknown): OpenAIMessage | null {
 export class AgentSession {
   private messages: OpenAIMessage[] = [];
   private memoryPrompt = '';
+  private activeRoleId: string | null = null;
   private onPersistMessage: ((msg: OpenAIMessage) => void) | null = null;
   private onMemoryExtracted: ((memories: ExtractedMemory[]) => void) | null = null;
+  private contextManager = new ContextManager();
 
   constructor(private ctx: ToolContext) {}
 
@@ -218,6 +256,15 @@ export class AgentSession {
   /** Set the long-term memory text to append to system prompt */
   setMemoryPrompt(prompt: string) {
     this.memoryPrompt = prompt;
+  }
+
+  /** Set active role for specialized persona */
+  setRole(roleId: string | null) {
+    this.activeRoleId = roleId;
+  }
+
+  getRole(): string | null {
+    return this.activeRoleId;
   }
 
   /** Set callback to persist each message to Supabase */
@@ -237,6 +284,7 @@ export class AgentSession {
 
   reset() {
     this.messages = [];
+    this.contextManager.reset();
   }
 
   getMessages(): readonly OpenAIMessage[] {
@@ -248,23 +296,30 @@ export class AgentSession {
     this.messages.push(userMsg);
     this.onPersistMessage?.(userMsg);
 
-    const MAX_HOPS = 4;
-    // Track tool calls within this turn to prevent runaway loops on stubborn models
+    const MAX_HOPS = 10;
     const seenCallKeys = new Set<string>();
     let prerequisiteFailed = false;
+    let toolStep = 0;
+    let consecutiveEmptyHops = 0;
 
     for (let hop = 0; hop < MAX_HOPS; hop++) {
-      // On the final hop, OR after a prerequisite failure was detected, force a plain-text reply
-      // by sending an empty tools array. This guarantees the user always gets a final answer.
       const isLastHop = hop === MAX_HOPS - 1;
       const allowTools = !isLastHop && !prerequisiteFailed;
+
+      const routedTools = getAvailableTools(this.ctx);
+      const routingHint = buildToolRoutingHint(this.ctx);
+
+      const sessionContext = this.contextManager.buildContextSummary();
 
       let proxyResult: { response: unknown; credits_balance: number | null };
       try {
         proxyResult = await callAgentProxy(this.messages, {
           allowTools,
           memoryPrompt: this.memoryPrompt,
-          dynamicContext: buildDynamicContext(this.ctx),
+          dynamicContext: buildDynamicContext(this.ctx) + sessionContext,
+          availableTools: routedTools,
+          routingHint,
+          roleOverlay: buildRoleOverlay(this.activeRoleId),
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -280,23 +335,35 @@ export class AgentSession {
         return '';
       }
 
-      // Append assistant message to history (preserve tool_calls for the next round)
       this.messages.push(assistantMsg);
       this.onPersistMessage?.(assistantMsg);
 
       const rawText = typeof assistantMsg.content === 'string' ? assistantMsg.content : '';
       const toolCalls = assistantMsg.tool_calls ?? [];
 
-      // Parse and strip memory extracts from the final text reply
+      // Final answer: text with no tool calls
       if (rawText && toolCalls.length === 0) {
         const { cleanText, memories } = parseMemoryExtracts(rawText);
         if (cleanText) onEvent({ kind: 'assistant_text', text: cleanText });
         if (memories.length > 0) this.onMemoryExtracted?.(memories);
         return cleanText;
       }
-      if (rawText) onEvent({ kind: 'assistant_text', text: rawText });
 
-      // Execute each tool and append a 'tool' message for each tool_call_id
+      // Intermediate reasoning (text before tool calls) → emit as thinking
+      if (rawText && toolCalls.length > 0) {
+        onEvent({ kind: 'thinking', text: rawText, step: hop + 1, totalSteps: null });
+      }
+
+      if (toolCalls.length === 0 && !rawText) {
+        consecutiveEmptyHops++;
+        if (consecutiveEmptyHops >= 2) {
+          onEvent({ kind: 'error', message: 'Agent produced empty responses. Stopping.' });
+          return '';
+        }
+        continue;
+      }
+      consecutiveEmptyHops = 0;
+
       for (const tc of toolCalls) {
         const name = tc.function?.name ?? '';
         const argsJson = tc.function?.arguments ?? '';
@@ -306,17 +373,17 @@ export class AgentSession {
         } catch {
           args = {};
         }
+
+        toolStep++;
         onEvent({ kind: 'tool_start', name, input: args });
         const started = performance.now();
         let result: unknown;
 
-        // Dedup: if the model already called this exact (name, args) pair this turn,
-        // reject without executing — Llama 3.3 in particular tends to loop on prerequisite errors.
         const callKey = `${name}::${argsJson}`;
         if (seenCallKeys.has(callKey)) {
           result = {
             error:
-              'DUPLICATE_TOOL_CALL: this exact tool was already invoked with the same arguments in this turn. STOP calling tools and reply in plain text now — explain to the user what they need to do (e.g. upload IFC files, run comparison) and wait for their action.',
+              'DUPLICATE_TOOL_CALL: this exact tool was already invoked with the same arguments in this turn. STOP calling tools and reply in plain text now.',
           };
         } else {
           seenCallKeys.add(callKey);
@@ -327,7 +394,8 @@ export class AgentSession {
           }
         }
 
-        // Detect prerequisite-not-met errors so the next hop forces a plain-text reply.
+        this.contextManager.recordToolResult(name, result);
+
         if (result && typeof result === 'object' && 'error' in result) {
           const errStr = String((result as Record<string, unknown>).error ?? '');
           if (errStr.includes('PREREQUISITE_NOT_MET')) {
@@ -351,7 +419,7 @@ export class AgentSession {
       }
     }
 
-    const msg = `Agent stopped after ${MAX_HOPS} tool hops without a final answer.`;
+    const msg = `Agent completed ${toolStep} tool steps across ${MAX_HOPS} reasoning hops.`;
     onEvent({ kind: 'error', message: msg });
     return msg;
   }

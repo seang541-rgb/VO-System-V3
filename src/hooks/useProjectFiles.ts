@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { uploadProjectFile, deleteProjectFile } from '../lib/storage';
 
+export type FileRole = 'base' | 'revision' | 'bq' | 'contract' | 'other';
+
 export interface ProjectFile {
   id: string;
   project_id: string;
   label: string;
-  role: 'base' | 'revision';
+  role: FileRole;
   storage_path: string;
   file_size: number;
   element_count: number | null;
@@ -50,7 +52,7 @@ export function useProjectFiles(projectId?: string) {
       userId: string,
       file: File,
       label: string,
-      role: 'base' | 'revision',
+      role: FileRole,
       elementCount?: number,
     ): Promise<ProjectFile | null> => {
       if (!projectId) return null;
@@ -141,11 +143,15 @@ export function useProjectFiles(projectId?: string) {
 
   const baseFiles = files.filter((f) => f.role === 'base');
   const revisionFiles = files.filter((f) => f.role === 'revision');
+  const bqFiles = files.filter((f) => f.role === 'bq');
+  const contractFiles = files.filter((f) => f.role === 'contract');
 
   return {
     files,
     baseFiles,
     revisionFiles,
+    bqFiles,
+    contractFiles,
     loading,
     error,
     refresh,

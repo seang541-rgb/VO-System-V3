@@ -200,3 +200,37 @@ export async function listVoTemplates(): Promise<VoTemplateRow[]> {
   if (error) throw new Error(`vo_templates list failed: ${error.message}`);
   return (data ?? []) as VoTemplateRow[];
 }
+
+// ── Unit rate lookup ──────────────────────────────────────────────────────────
+
+export interface UnitRateRow {
+  id: number;
+  category: string;
+  item_code: string | null;
+  description: string;
+  description_cn: string | null;
+  unit: string;
+  rate_myr: number;
+  region: string;
+  rate_year: number;
+  source: string | null;
+  min_rate: number | null;
+  max_rate: number | null;
+  notes: string | null;
+}
+
+export async function searchUnitRates(
+  options: { category?: string; query?: string; region?: string; limit?: number },
+): Promise<UnitRateRow[]> {
+  const limit = Math.max(1, Math.min(30, options.limit ?? 10));
+  let builder = supabase.from('unit_rates').select('*');
+  if (options.category) builder = builder.eq('category', options.category);
+  if (options.region && options.region !== 'any') builder = builder.eq('region', options.region);
+  if (options.query) {
+    const q = `%${options.query}%`;
+    builder = builder.or(`description.ilike.${q},description_cn.ilike.${q},item_code.ilike.${q}`);
+  }
+  const { data, error } = await builder.order('category').limit(limit);
+  if (error) throw new Error(`unit_rates search failed: ${error.message}`);
+  return (data ?? []) as UnitRateRow[];
+}
