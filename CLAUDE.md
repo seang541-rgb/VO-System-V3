@@ -151,9 +151,11 @@ Only genuinely unused artifacts were removed in the V3 cleanup:
 - `src/agent/batch-processor.ts` — unused multi-project batch
 - `src/agent/training-collector.ts` — unused fine-tune pipeline
 - `supabase/functions/create-subscription/` — unused Stripe subscription
-- `supabase/functions/dispatch-webhook/` — unused webhook dispatcher
-- `supabase/functions/public-api/` — unused REST API
 - npm deps: `@google/genai`, `better-sqlite3`, `express`, `dotenv`, `motion`
+
+`supabase/functions/dispatch-webhook/` and `public-api/` are active product
+capabilities required by the Settings UI. Keep their UI, schema, and functions
+together if changing this product surface.
 
 ## Conventions
 
@@ -191,7 +193,7 @@ Only genuinely unused artifacts were removed in the V3 cleanup:
 
 ## Do Not
 - Do not change auth/AuthProvider.tsx without explicit permission
-- Do not modify Supabase RLS policies
+- Treat Supabase RLS policies as security-critical: change them only with an explicit migration and review
 - Do not add new npm dependencies without discussing first
 - Do not use `any` type — use proper interfaces or `unknown`
 - Do not remove the ErrorBoundary wrapper in main.tsx

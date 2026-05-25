@@ -51,6 +51,16 @@ export function useWebhooks() {
     events: WebhookEvent[],
     projectId?: string,
   ) => {
+    let endpoint: URL;
+    try {
+      endpoint = new URL(url);
+    } catch {
+      throw new Error('Webhook URL must be a valid HTTPS URL.');
+    }
+    if (endpoint.protocol !== 'https:') {
+      throw new Error('Webhook URL must use HTTPS.');
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
@@ -62,7 +72,7 @@ export function useWebhooks() {
       .insert({
         user_id: user.id,
         project_id: projectId ?? null,
-        url,
+        url: endpoint.toString(),
         events,
         secret,
         enabled: true,

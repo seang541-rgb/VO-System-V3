@@ -185,8 +185,9 @@ async function callAgentProxy(
     availableTools?: typeof OPENAI_TOOL_DEFINITIONS;
     routingHint?: string;
     roleOverlay?: string;
+    turnId?: string | null;
   } = {},
-): Promise<{ response: unknown; credits_balance: number | null }> {
+): Promise<{ response: unknown; credits_balance: number | null; turn_id: string | null }> {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
   if (!token) throw new Error('Not signed in. Please log in first.');
@@ -211,6 +212,7 @@ async function callAgentProxy(
     body: JSON.stringify({
       messages,
       tools,
+      turn_id: options.turnId ?? null,
       system: SYSTEM_PROMPT + (options.roleOverlay || '') + (options.dynamicContext || '') + (options.routingHint || '') + (options.memoryPrompt || ''),
     }),
   });
@@ -224,6 +226,7 @@ async function callAgentProxy(
   return {
     response: json.response,
     credits_balance: typeof json.credits_balance === 'number' ? json.credits_balance : null,
+    turn_id: typeof json.turn_id === 'string' ? json.turn_id : null,
   };
 }
 
@@ -301,6 +304,7 @@ export class AgentSession {
     let prerequisiteFailed = false;
     let toolStep = 0;
     let consecutiveEmptyHops = 0;
+    let turnId: string | null = null;
 
     for (let hop = 0; hop < MAX_HOPS; hop++) {
       const isLastHop = hop === MAX_HOPS - 1;
@@ -311,7 +315,7 @@ export class AgentSession {
 
       const sessionContext = this.contextManager.buildContextSummary();
 
-      let proxyResult: { response: unknown; credits_balance: number | null };
+      let proxyResult: { response: unknown; credits_balance: number | null; turn_id: string | null };
       try {
         proxyResult = await callAgentProxy(this.messages, {
           allowTools,
@@ -320,6 +324,7 @@ export class AgentSession {
           availableTools: routedTools,
           routingHint,
           roleOverlay: buildRoleOverlay(this.activeRoleId),
+          turnId,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -327,6 +332,7 @@ export class AgentSession {
         throw err;
       }
 
+      turnId = proxyResult.turn_id ?? turnId;
       onEvent({ kind: 'credits', balance: proxyResult.credits_balance });
 
       const assistantMsg = extractAssistantMessage(proxyResult.response);

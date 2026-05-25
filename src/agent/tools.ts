@@ -95,6 +95,7 @@ function extractAppliesTo(title: string): string {
 }
 
 export type WhichModel = 'base' | 'revision';
+export type ToolEventType = 'comparison.completed' | 'report.generated';
 
 export interface ToolContext {
   baseComponents: BimComponent[];
@@ -105,6 +106,7 @@ export interface ToolContext {
   baseFileName: string | null;
   revisionFileName: string | null;
   runCompare: () => Promise<VoComparisonResults | null>;
+  dispatchEvent?: (eventType: ToolEventType, payload: Record<string, unknown>) => void;
   getActiveIfcHandle?: () => { api: any; modelID: number } | null;
   activeIfcSlot?: 'base' | 'revision' | null;
   ocrFile?: File | null;
@@ -541,10 +543,22 @@ export async function executeAgentTool(
             'PREREQUISITE_NOT_MET: The user has not loaded both IFC files. STOP calling tools. In your reply, instruct the user to use the CHOOSE FILE buttons at the top to upload base.ifc and revision.ifc, then re-ask. Do NOT call query_ifc, audit_ifc, or any other tool to "explore" — they will all fail for the same reason.',
         };
       }
-      const results = !force && ctx.voResults ? ctx.voResults : await ctx.runCompare();
+      const cached = !force && !!ctx.voResults;
+      const results = cached ? ctx.voResults : await ctx.runCompare();
       if (!results) return { error: 'Comparison did not produce a result.' };
+      ctx.voResults = results;
+      if (!cached || force) {
+        ctx.dispatchEvent?.('comparison.completed', {
+          summary: {
+            added: results.added.length,
+            deleted: results.deleted.length,
+            modified: results.modified.length,
+          },
+          source: 'agent',
+        });
+      }
       return {
-        cached: !force && !!ctx.voResults,
+        cached,
         summary: {
           added: results.added.length,
           deleted: results.deleted.length,
@@ -597,6 +611,7 @@ export async function executeAgentTool(
           revisionModelName: ctx.revisionFileName ?? undefined,
           pricingContext: ctx.bqContext,
         });
+        ctx.dispatchEvent?.('report.generated', { format: 'excel', source: 'agent' });
         return { ok: true, note: 'Workbook generated and downloaded in the browser.' };
       } catch (err) {
         return { error: err instanceof Error ? err.message : String(err) };
@@ -938,6 +953,7 @@ export async function executeAgentTool(
           pricingContext: ctx.bqContext,
           preparedBy,
         });
+        ctx.dispatchEvent?.('report.generated', { format: 'pdf', source: 'agent' });
         return { ok: true, note: 'PDF report generated and downloaded in the browser.' };
       } catch (err) {
         return { error: err instanceof Error ? err.message : String(err) };

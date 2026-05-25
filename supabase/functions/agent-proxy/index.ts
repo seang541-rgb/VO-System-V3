@@ -1,6 +1,5 @@
 // @ts-nocheck
-// Supabase Edge Function: agent-proxy (NVIDIA NIM backend, OpenAI-compatible)
-// Auth + credit check via direct Supabase REST calls (no client library auth quirks)
+// Supabase Edge Function: authenticated NVIDIA NIM proxy with per-turn billing.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 
@@ -21,6 +20,13 @@ function jsonResponse(status, body) {
   });
 }
 
+async function sha256(text) {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(bytes))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return jsonResponse(405, { error: 'Use POST.' });
@@ -37,68 +43,65 @@ serve(async (request) => {
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
     if (!token) return jsonResponse(401, { error: 'Missing bearer token.' });
 
-    // 1. Verify user via Supabase Auth REST API
     const authRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'apikey': anonKey,
+        Authorization: `Bearer ${token}`,
+        apikey: anonKey,
       },
     });
-    if (!authRes.ok) {
-      return jsonResponse(401, { error: 'Invalid or expired session.' });
-    }
-    const authUser = await authRes.json();
-    if (!authUser?.id) {
-      return jsonResponse(401, { error: 'Could not identify user.' });
-    }
+    if (!authRes.ok) return jsonResponse(401, { error: 'Invalid or expired session.' });
 
-    // 2. Parse request body
+    const authUser = await authRes.json();
+    if (!authUser?.id) return jsonResponse(401, { error: 'Could not identify user.' });
+
     const payload = await request.json().catch(() => null);
     if (!payload || !Array.isArray(payload.messages) || payload.messages.length === 0) {
       return jsonResponse(400, { error: 'messages must be a non-empty array.' });
     }
 
-    // 3. Deduct 1 credit via RPC (runs as the user so auth.uid() works)
-    //
-    // TESTING BYPASS: when Supabase secret BYPASS_CREDITS=true, we skip the
-    // RPC and pretend the balance is unchanged. Used while debugging tools so
-    // we don't burn real credits. REMOVE this branch (or unset the secret)
-    // before production launch.
-    const bypassCredits = Deno.env.get('BYPASS_CREDITS') === 'true';
-    let newBalance: number | null = null;
-
-    if (bypassCredits) {
-      console.log('[agent-proxy] BYPASS_CREDITS=true — skipping consume_credit');
-      newBalance = 9999; // sentinel so the UI shows "credits" but never empties
-    } else {
-      const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/consume_credit`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'apikey': anonKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({}),
-      });
-      const rpcJson = await rpcRes.json().catch(() => null);
-
-      if (!rpcRes.ok) {
-        const msg = rpcJson?.message || rpcJson?.error || '';
-        if (msg.includes('NO_CREDITS')) {
-          return jsonResponse(402, { error: 'Insufficient credits. Please top up.' });
-        }
-        return jsonResponse(500, { error: `Credit check failed: ${msg}` });
-      }
-
-      newBalance =
-        rpcJson && typeof rpcJson === 'object' && typeof rpcJson.credits_balance === 'number'
-          ? rpcJson.credits_balance
-          : null;
+    const requestedTurnId =
+      typeof payload.turn_id === 'string' && payload.turn_id ? payload.turn_id : null;
+    if (requestedTurnId && payload.messages[payload.messages.length - 1]?.role !== 'tool') {
+      return jsonResponse(400, { error: 'Agent continuations must end with a tool result.' });
     }
 
-    // 4. Call NVIDIA NIM (OpenAI-compatible chat/completions)
-    const { messages, tools, system, model } = payload;
+    const userMessagesHash = await sha256(JSON.stringify(
+      payload.messages
+        .filter((message) => message && message.role === 'user')
+        .map((message) => message.content ?? null),
+    ));
 
+    const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/consume_agent_turn_credit`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: anonKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        p_turn_id: requestedTurnId,
+        p_user_messages_hash: userMessagesHash,
+      }),
+    });
+    const rpcJson = await rpcRes.json().catch(() => null);
+
+    if (!rpcRes.ok) {
+      const msg = rpcJson?.message || rpcJson?.error || '';
+      if (msg.includes('NO_CREDITS')) {
+        return jsonResponse(402, { error: 'Insufficient credits. Please top up.' });
+      }
+      if (msg.includes('INVALID_AGENT_TURN')) {
+        return jsonResponse(409, { error: 'This agent turn has expired or reached its hop limit.' });
+      }
+      return jsonResponse(500, { error: `Credit check failed: ${msg}` });
+    }
+
+    const newBalance =
+      rpcJson && typeof rpcJson.credits_balance === 'number' ? rpcJson.credits_balance : null;
+    const turnId =
+      rpcJson && typeof rpcJson.turn_id === 'string' ? rpcJson.turn_id : null;
+
+    const { messages, tools, system, model } = payload;
     const nimMessages = [];
     if (typeof system === 'string' && system.trim()) {
       nimMessages.push({ role: 'system', content: system });
@@ -122,8 +125,8 @@ serve(async (request) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${nvidiaKey}`,
-        'Accept': 'application/json',
+        Authorization: `Bearer ${nvidiaKey}`,
+        Accept: 'application/json',
       },
       body: JSON.stringify(nimBody),
     });
@@ -138,8 +141,11 @@ serve(async (request) => {
       return jsonResponse(nimRes.status, { error: msg });
     }
 
-    return jsonResponse(200, { response: nimJson, credits_balance: newBalance });
-
+    return jsonResponse(200, {
+      response: nimJson,
+      credits_balance: newBalance,
+      turn_id: turnId,
+    });
   } catch (err) {
     return jsonResponse(500, { error: err instanceof Error ? err.message : 'Unknown server error.' });
   }

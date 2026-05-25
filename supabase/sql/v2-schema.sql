@@ -193,7 +193,7 @@ CREATE POLICY "users_delete_own_vo_exports" ON vo_exports FOR DELETE TO authenti
 CREATE POLICY "service_role_all_vo_exports" ON vo_exports FOR ALL TO service_role
   USING (true) WITH CHECK (true);
 
--- user_subscriptions: each user owns their single row
+-- user_subscriptions: billing-owned data; users may only read their row
 ALTER TABLE user_subscriptions ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "users_select_own_subscription"  ON user_subscriptions;
@@ -203,12 +203,6 @@ DROP POLICY IF EXISTS "users_delete_own_subscription"  ON user_subscriptions;
 DROP POLICY IF EXISTS "service_role_all_subscriptions" ON user_subscriptions;
 
 CREATE POLICY "users_select_own_subscription" ON user_subscriptions FOR SELECT TO authenticated
-  USING (user_id = auth.uid());
-CREATE POLICY "users_insert_own_subscription" ON user_subscriptions FOR INSERT TO authenticated
-  WITH CHECK (user_id = auth.uid());
-CREATE POLICY "users_update_own_subscription" ON user_subscriptions FOR UPDATE TO authenticated
-  USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
-CREATE POLICY "users_delete_own_subscription" ON user_subscriptions FOR DELETE TO authenticated
   USING (user_id = auth.uid());
 CREATE POLICY "service_role_all_subscriptions" ON user_subscriptions FOR ALL TO service_role
   USING (true) WITH CHECK (true);

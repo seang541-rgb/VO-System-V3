@@ -22,10 +22,6 @@ const WEBHOOK_EVENT_OPTIONS: { value: WebhookEvent; label: string }[] = [
 
 const API_SCOPE_OPTIONS: { value: ApiScope; label: string }[] = [
   { value: 'read', label: 'Read' },
-  { value: 'write', label: 'Write' },
-  { value: 'compare', label: 'Compare' },
-  { value: 'audit', label: 'Audit' },
-  { value: 'export', label: 'Export' },
 ];
 
 export default function SettingsPage() {
@@ -105,29 +101,6 @@ export default function SettingsPage() {
           </span>
         </div>
 
-        <div className="pt-1">
-          {plan === 'free' ? (
-            <button
-              type="button"
-              className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-500 transition-colors"
-              onClick={() => {
-                // TODO: invoke create-subscription
-              }}
-            >
-              {t('settings.upgrade')}
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="rounded-xl border border-slate-600 px-4 py-2 text-xs text-slate-300 hover:bg-slate-700 transition-colors"
-              onClick={() => {
-                // TODO: open Stripe Customer Portal
-              }}
-            >
-              {t('settings.managePlan')}
-            </button>
-          )}
-        </div>
       </section>
 
       {/* Language */}

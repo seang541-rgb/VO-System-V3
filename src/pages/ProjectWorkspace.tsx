@@ -29,6 +29,7 @@ import { useCredits } from '../hooks/useCredits';
 import { useProjectFiles } from '../hooks/useProjectFiles';
 import type { ProjectFile } from '../hooks/useProjectFiles';
 import { useVOHistory } from '../hooks/useVOHistory';
+import { dispatchWebhookEvent } from '../hooks/useWebhooks';
 import { useProjects } from '../hooks/useProjects';
 import type { ToolContext } from '../agent/tools';
 import {
@@ -624,6 +625,17 @@ export default function ProjectWorkspace() {
         );
         if (saved) setSelectedComparisonId(saved.id);
       }
+      if (projectId) {
+        void dispatchWebhookEvent('comparison.completed', {
+          projectId,
+          summary: {
+            added: results.added.length,
+            deleted: results.deleted.length,
+            modified: results.modified.length,
+            netValue: commercial.summary.netValue,
+          },
+        });
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown comparison error';
       setVoResults(null);
@@ -668,6 +680,17 @@ export default function ProjectWorkspace() {
         revisionModelName: v2File?.name ?? '',
         pricingContext: buildBqMappingContext(bqItems, labelMappings),
       });
+      if (projectId) {
+        void dispatchWebhookEvent('report.generated', {
+          projectId,
+          format: 'excel',
+          summary: {
+            added: voResults.added.length,
+            deleted: voResults.deleted.length,
+            modified: voResults.modified.length,
+          },
+        });
+      }
       setSysLog('Premium VO Excel generated. One audit credit consumed from the secure cloud balance.');
       toast.success('Excel 已导出');
     } catch (err: unknown) {
@@ -1038,14 +1061,27 @@ export default function ProjectWorkspace() {
     const results = await engine.compareModels(v1Components, v2Components);
     setVoResults(results);
     setCompareState('success');
+    if (activeBaseFile && activeRevisionFile) {
+      const saved = await voHistory.saveComparison(
+        activeBaseFile.id,
+        activeRevisionFile.id,
+        {
+          added: results.added.length,
+          deleted: results.deleted.length,
+          modified: results.modified.length,
+          totalChanges: results.added.length + results.deleted.length + results.modified.length,
+        },
+        results,
+      );
+      if (saved) setSelectedComparisonId(saved.id);
+    }
     try {
       engine.highlightComparison(results);
     } catch {
       /* highlight failures do not block tool result */
     }
     return results;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [v1State, v2State, v1Components, v2Components]);
+  }, [v1State, v2State, v1Components, v2Components, activeBaseFile, activeRevisionFile, voHistory.saveComparison]);
 
   const agentToolContext: ToolContext = useMemo(() => ({
     baseComponents: v1Components,
@@ -1056,6 +1092,9 @@ export default function ProjectWorkspace() {
     baseFileName: v1File?.name ?? null,
     revisionFileName: v2File?.name ?? null,
     runCompare: runCompareForAgent,
+    dispatchEvent: (eventType, payload) => {
+      if (projectId) void dispatchWebhookEvent(eventType, { projectId, ...payload });
+    },
     getActiveIfcHandle: () => {
       const handle = engineRef.current?.getIfcHandle() ?? null;
       // DEV ONLY: expose to window for console debugging.
@@ -1063,7 +1102,7 @@ export default function ProjectWorkspace() {
       return handle;
     },
     activeIfcSlot,
-  }), [v1Components, v2Components, voResults, bqItems, labelMappings, v1File, v2File, runCompareForAgent, activeIfcSlot]);
+  }), [v1Components, v2Components, voResults, bqItems, labelMappings, v1File, v2File, runCompareForAgent, projectId, activeIfcSlot]);
 
   const canCompareForPanel = v1State === 'ready' && v2State === 'ready' && !isRunning;
   const canAuditForPanel = (v1State === 'ready' || v2State === 'ready') && auditState !== 'running';

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
-export type ApiScope = 'read' | 'write' | 'compare' | 'audit' | 'export';
+export type ApiScope = 'read';
 
 export interface ApiKey {
   id: string;
