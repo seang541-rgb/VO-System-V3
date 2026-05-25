@@ -1,7 +1,5 @@
 import { supabase } from '../lib/supabase';
 import { OPENAI_TOOL_DEFINITIONS, executeAgentTool, getAvailableTools, buildToolRoutingHint, type ToolContext } from './tools';
-import { ContextManager } from './context-manager';
-import { buildRoleOverlay } from './roles';
 
 // ── OpenAI-compatible message types (used by NVIDIA NIM / DeepSeek V4 Pro) ────
 
@@ -184,7 +182,6 @@ async function callAgentProxy(
     dynamicContext?: string;
     availableTools?: typeof OPENAI_TOOL_DEFINITIONS;
     routingHint?: string;
-    roleOverlay?: string;
   } = {},
 ): Promise<{ response: unknown; credits_balance: number | null }> {
   const { data: sessionData } = await supabase.auth.getSession();
@@ -211,7 +208,7 @@ async function callAgentProxy(
     body: JSON.stringify({
       messages,
       tools,
-      system: SYSTEM_PROMPT + (options.roleOverlay || '') + (options.dynamicContext || '') + (options.routingHint || '') + (options.memoryPrompt || ''),
+      system: SYSTEM_PROMPT + (options.dynamicContext || '') + (options.routingHint || '') + (options.memoryPrompt || ''),
     }),
   });
 
@@ -242,10 +239,8 @@ function extractAssistantMessage(response: unknown): OpenAIMessage | null {
 export class AgentSession {
   private messages: OpenAIMessage[] = [];
   private memoryPrompt = '';
-  private activeRoleId: string | null = null;
   private onPersistMessage: ((msg: OpenAIMessage) => void) | null = null;
   private onMemoryExtracted: ((memories: ExtractedMemory[]) => void) | null = null;
-  private contextManager = new ContextManager();
 
   constructor(private ctx: ToolContext) {}
 
@@ -256,15 +251,6 @@ export class AgentSession {
   /** Set the long-term memory text to append to system prompt */
   setMemoryPrompt(prompt: string) {
     this.memoryPrompt = prompt;
-  }
-
-  /** Set active role for specialized persona */
-  setRole(roleId: string | null) {
-    this.activeRoleId = roleId;
-  }
-
-  getRole(): string | null {
-    return this.activeRoleId;
   }
 
   /** Set callback to persist each message to Supabase */
@@ -284,7 +270,6 @@ export class AgentSession {
 
   reset() {
     this.messages = [];
-    this.contextManager.reset();
   }
 
   getMessages(): readonly OpenAIMessage[] {
@@ -309,17 +294,14 @@ export class AgentSession {
       const routedTools = getAvailableTools(this.ctx);
       const routingHint = buildToolRoutingHint(this.ctx);
 
-      const sessionContext = this.contextManager.buildContextSummary();
-
       let proxyResult: { response: unknown; credits_balance: number | null };
       try {
         proxyResult = await callAgentProxy(this.messages, {
           allowTools,
           memoryPrompt: this.memoryPrompt,
-          dynamicContext: buildDynamicContext(this.ctx) + sessionContext,
+          dynamicContext: buildDynamicContext(this.ctx),
           availableTools: routedTools,
           routingHint,
-          roleOverlay: buildRoleOverlay(this.activeRoleId),
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -393,8 +375,6 @@ export class AgentSession {
             result = { error: err instanceof Error ? err.message : String(err) };
           }
         }
-
-        this.contextManager.recordToolResult(name, result);
 
         if (result && typeof result === 'object' && 'error' in result) {
           const errStr = String((result as Record<string, unknown>).error ?? '');

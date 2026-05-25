@@ -23,3 +23,8 @@ scripts/gen-seed-template.mjs
 # Elder gods / agent system files
 AGENTS.md
 .elder-gods/
+
+# Binary assets (managed outside git)
+*.ifc
+*.xlsx
+!package-lock.json
