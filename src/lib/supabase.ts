@@ -5,11 +5,12 @@ const supabasePublishableKey =
   (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined) ??
   (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined);
 
-if (!supabaseUrl || !supabasePublishableKey) {
-  throw new Error('Missing Supabase environment variables. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.');
-}
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabasePublishableKey);
 
-export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
+export const supabase = createClient(
+  supabaseUrl ?? 'http://127.0.0.1:54321',
+  supabasePublishableKey ?? 'missing-supabase-publishable-key',
+  {
   auth: {
     persistSession: true,
     autoRefreshToken: true,

@@ -3,6 +3,16 @@
 This repository contains the schema and Edge Functions required by the current
 workspace, Agent, billing, webhook, and API-key features.
 
+## Frontend Environment
+
+For local development, copy `.env.example` to `.env.local` and fill in:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
+
+The application now displays a configuration-required screen when these values
+are missing instead of failing with a blank page.
+
 ## Database Order
 
 Apply the SQL scripts in Supabase SQL Editor in this order:
