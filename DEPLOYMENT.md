@@ -10,8 +10,11 @@ For local development, copy `.env.example` to `.env.local` and fill in:
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_PUBLISHABLE_KEY`
 
-The application now displays a configuration-required screen when these values
-are missing instead of failing with a blank page.
+Without these values the application runs in local workspace mode: IFC
+comparison and Excel export remain available, while cloud-backed features are
+disabled.
+When cloud mode is configured, `/local` remains available for local-only IFC
+comparison and export.
 
 ## Database Order
 

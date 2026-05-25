@@ -63,7 +63,7 @@ const BQ_MAPPING_STORAGE_KEY = `vo-system-bq-mappings:${PROJECT_QS_OVERRIDES.pro
 const CHECKOUT_BALANCE_STORAGE_KEY = 'vo-system:checkout-balance';
 const CHECKOUT_CREDIT_TOP_UP_AMOUNT = 50;
 
-export default function App() {
+export default function App({ localMode = false }: { localMode?: boolean }) {
   const [sysLog, setSysLog] = useState('System Live. Awaiting IFC models and QS mapping.');
   const [isRunning, setIsRunning] = useState(false);
   const [v1File, setV1File] = useState<File | null>(null);
@@ -91,7 +91,7 @@ export default function App() {
   const [compareState, setCompareState] = useState<CompareState>('idle');
   const [compareMessage, setCompareMessage] = useState('Load two IFC files, then run the comparison.');
   const [selectedRowKey, setSelectedRowKey] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('copilot');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(localMode ? 'overview' : 'copilot');
   const [showLegacyBanner, setShowLegacyBanner] = useState(true);
   /** Tracks which IFC slot is currently in the 3D viewer (last successful load). */
   const [activeIfcSlot, setActiveIfcSlot] = useState<'base' | 'revision' | null>(null);
@@ -461,30 +461,32 @@ export default function App() {
   };
 
   const exportWorkbook = async () => {
-    if (!voResults || !user || isExporting) return;
+    if (!voResults || isExporting || (!localMode && !user)) return;
 
     setIsExporting(true);
     setBillingError('');
 
     try {
-      const { data, error } = await supabase.rpc('consume_credit');
+      if (!localMode) {
+        const { data, error } = await supabase.rpc('consume_credit');
 
-      if (error) {
-        if (error.message?.includes('NO_CREDITS')) {
-          setCreditsBalance(0);
-          setShowPaywall(true);
-          setBillingError('No premium audit credits remaining. Top up before generating another Excel report.');
-          setSysLog('Excel export blocked: credits exhausted.');
-          return;
+        if (error) {
+          if (error.message?.includes('NO_CREDITS')) {
+            setCreditsBalance(0);
+            setShowPaywall(true);
+            setBillingError('No premium audit credits remaining. Top up before generating another Excel report.');
+            setSysLog('Excel export blocked: credits exhausted.');
+            return;
+          }
+
+          throw error;
         }
 
-        throw error;
-      }
-
-      if (typeof data?.credits_balance === 'number') {
-        setCreditsBalance(data.credits_balance);
-      } else {
-        await refreshCredits();
+        if (typeof data?.credits_balance === 'number') {
+          setCreditsBalance(data.credits_balance);
+        } else {
+          await refreshCredits();
+        }
       }
 
       exportVoSubstantiationWorkbook(voResults, {
@@ -492,7 +494,9 @@ export default function App() {
         revisionModelName: v2File?.name ?? '',
         pricingContext: buildBqMappingContext(bqItems, labelMappings),
       });
-      setSysLog('Premium VO Excel generated. One audit credit consumed from the secure cloud balance.');
+      setSysLog(localMode
+        ? 'VO Excel generated locally.'
+        : 'Premium VO Excel generated. One audit credit consumed from the secure cloud balance.');
       toast.success('Excel 已导出');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to validate cloud credits.';
@@ -515,7 +519,7 @@ export default function App() {
 
     try {
       const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: { user_id: user.id },
+        body: { return_path: window.location.pathname },
       });
 
       if (error) {
@@ -878,7 +882,7 @@ export default function App() {
   }), [v1Components, v2Components, voResults, bqItems, labelMappings, v1File, v2File, runCompareForAgent, activeIfcSlot]);
 
   return (
-    <AuthGuard>
+    <AuthGuard allowLocal={localMode}>
       <Toaster position="top-right" toastOptions={{ style: { background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' } }} />
       <div className="min-h-screen w-full overflow-x-hidden bg-slate-900 font-sans text-slate-300">
       {/* ── HEADER (Idea Nest) ────────────────────────────── */}
@@ -887,6 +891,7 @@ export default function App() {
         creditsLoading={creditsLoading}
         plan="free"
         onSignOut={() => void signOut()}
+        localMode={localMode}
       />
       {/* Hidden file inputs (triggered from sidebar buttons) */}
       <input ref={v1InputRef} type="file" className="hidden" accept=".ifc,.IFC,application/octet-stream" onChange={(e) => handleIFCUpload(e, 'v1')} disabled={isRunning} />

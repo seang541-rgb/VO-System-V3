@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowLeft, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../lib/supabase';
 
@@ -178,6 +179,14 @@ export default function LoginPage() {
                     ? 'Enter Workspace'
                     : 'Create Workspace Account'}
             </button>
+
+            <Link
+              to="/local"
+              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-700/70 px-5 py-3 text-sm font-semibold text-slate-300 transition hover:border-slate-500 hover:bg-slate-800 hover:text-white"
+            >
+              <ArrowLeft size={16} />
+              Open Local Workspace
+            </Link>
           </form>
         </section>
       </div>

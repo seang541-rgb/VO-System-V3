@@ -11,6 +11,7 @@ interface AppHeaderProps {
   plan: PlanName;
   onSignOut: () => void;
   projectName?: string;
+  localMode?: boolean;
 }
 
 function Breadcrumb({ projectName }: { projectName?: string }) {
@@ -47,6 +48,7 @@ export default function AppHeader({
   plan,
   onSignOut,
   projectName,
+  localMode = false,
 }: AppHeaderProps) {
   const { t } = useTranslation();
 
@@ -74,41 +76,47 @@ export default function AppHeader({
 
         {/* Right: Credits, PlanBadge, LanguageSwitcher, Settings, Sign Out */}
         <div className="flex items-center gap-3">
-          {/* Credits */}
-          <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-1.5">
-            <Coins className="h-3.5 w-3.5 text-amber-400" />
-            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
-              {t('billing.credits')}
-            </span>
-            <span className="text-sm font-bold text-white">
-              {creditsLoading ? '...' : (creditsBalance ?? '-')}
-            </span>
-          </div>
-
-          {/* Plan Badge */}
-          <PlanBadge plan={plan} />
+          {localMode ? (
+            <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-[11px] font-semibold uppercase text-blue-300">
+              Local Workspace
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-1.5">
+                <Coins className="h-3.5 w-3.5 text-amber-400" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
+                  {t('billing.credits')}
+                </span>
+                <span className="text-sm font-bold text-white">
+                  {creditsLoading ? '...' : (creditsBalance ?? '-')}
+                </span>
+              </div>
+              <PlanBadge plan={plan} />
+            </>
+          )}
 
           {/* Language Switcher */}
           <LanguageSwitcher />
 
-          {/* Settings Link */}
-          <Link
-            to="/settings"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:border-slate-600 hover:text-white"
-          >
-            <Settings className="h-3.5 w-3.5" />
-            {t('nav.settings')}
-          </Link>
-
-          {/* Sign Out */}
-          <button
-            type="button"
-            onClick={onSignOut}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:border-slate-600 hover:text-white"
-          >
-            <LogOut className="h-3.5 w-3.5" />
-            {t('nav.signOut')}
-          </button>
+          {!localMode && (
+            <>
+              <Link
+                to="/settings"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:border-slate-600 hover:text-white"
+              >
+                <Settings className="h-3.5 w-3.5" />
+                {t('nav.settings')}
+              </Link>
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-300 hover:border-slate-600 hover:text-white"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                {t('nav.signOut')}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </header>

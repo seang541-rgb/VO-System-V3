@@ -2,8 +2,10 @@ import React from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import LoginPage from '../pages/LoginPage';
 
-export default function AuthGuard({ children }: { children: React.ReactNode }) {
+export default function AuthGuard({ children, allowLocal = false }: { children: React.ReactNode; allowLocal?: boolean }) {
   const { session, loading } = useAuth();
+
+  if (allowLocal) return <>{children}</>;
 
   if (loading) {
     return (

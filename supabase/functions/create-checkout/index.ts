@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -33,31 +34,46 @@ serve(async (request) => {
     const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
     const priceId = Deno.env.get('STRIPE_PRICE_ID') || FALLBACK_PRICE_ID;
     const configuredSiteUrl = Deno.env.get('SITE_URL');
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
 
     if (!stripeSecretKey) {
       return jsonResponse(500, { error: 'Missing STRIPE_SECRET_KEY secret.' });
     }
-
-    const payload = await request.json().catch(() => null) as { user_id?: string } | null;
-    const userId = payload?.user_id?.trim();
-
-    if (!userId) {
-      return jsonResponse(400, { error: 'Missing user_id in request body.' });
+    if (!supabaseUrl || !anonKey) {
+      return jsonResponse(500, { error: 'Missing Supabase environment variables.' });
     }
+
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader) return jsonResponse(401, { error: 'Unauthorized.' });
+    const authClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: authError } = await authClient.auth.getUser();
+    if (authError || !user) return jsonResponse(401, { error: 'Unauthorized.' });
+
+    const payload = await request.json().catch(() => null) as { return_path?: string } | null;
+    const requestedPath = payload?.return_path?.trim() ?? '/';
+    const returnPath =
+      requestedPath.startsWith('/') && !requestedPath.startsWith('//') && !requestedPath.includes('\\')
+        ? requestedPath
+        : '/';
 
     const requestOrigin = request.headers.get('origin') || undefined;
     const siteUrl = configuredSiteUrl || requestOrigin || 'http://localhost:3000';
-    const successUrl = `${siteUrl}/?checkout=success`;
-    const cancelUrl = `${siteUrl}/?checkout=cancelled`;
+    const successUrl = new URL(returnPath, siteUrl);
+    const cancelUrl = new URL(returnPath, siteUrl);
+    successUrl.searchParams.set('checkout', 'success');
+    cancelUrl.searchParams.set('checkout', 'cancelled');
 
     const form = new URLSearchParams();
     form.set('mode', 'payment');
-    form.set('success_url', successUrl);
-    form.set('cancel_url', cancelUrl);
-    form.set('client_reference_id', userId);
+    form.set('success_url', successUrl.toString());
+    form.set('cancel_url', cancelUrl.toString());
+    form.set('client_reference_id', user.id);
     form.set('line_items[0][price]', priceId);
     form.set('line_items[0][quantity]', '1');
-    form.set('metadata[user_id]', userId);
+    form.set('metadata[user_id]', user.id);
 
     const stripeResponse = await fetch(`${STRIPE_API_BASE}/checkout/sessions`, {
       method: 'POST',

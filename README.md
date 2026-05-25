@@ -17,14 +17,18 @@ Prerequisites: Node.js
 
 1. Install dependencies:
    `npm install`
-2. Copy `.env.example` to `.env.local` and set your Supabase publishable key.
-3. Start the app:
+2. Start the app:
    `npm run dev`
-4. Open [http://localhost:3000](http://localhost:3000)
-5. Upload a base IFC and a revision IFC
-6. Click `Run VO Comparison`
-7. Click `Generate VO Excel`
-8. Review `VO Cover Sheet` first, then `Star Rate Register` and `VO Substantiation`
+3. Open [http://localhost:3000](http://localhost:3000)
+4. Upload a base IFC and a revision IFC
+5. Click `Run VO Comparison`
+6. Click `Generate VO Excel`
+7. Review `VO Cover Sheet` first, then `Star Rate Register` and `VO Substantiation`
+
+The local IFC workspace and Excel export run without cloud configuration. To
+enable sign-in, persisted projects, credits, webhooks, API keys, and Copilot,
+copy `.env.example` to `.env.local` and set your Supabase publishable key.
+After cloud configuration, `/local` remains available for local-only IFC work.
 
 The `VO Cover Sheet` now carries formal header fields such as `Contract`, `Employer`, `Consultant / S.O.`, `VO Reference`, `Revision Reference`, `Prepared By`, and the uploaded `Base / Revision` IFC filenames.
 

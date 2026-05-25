@@ -714,7 +714,7 @@ export default function ProjectWorkspace() {
 
     try {
       const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: { user_id: user.id },
+        body: { return_path: window.location.pathname },
       });
 
       if (error) {

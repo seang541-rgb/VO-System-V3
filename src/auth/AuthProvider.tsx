@@ -13,12 +13,17 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children, offline = false }: { children: React.ReactNode; offline?: boolean }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!offline);
 
   useEffect(() => {
+    if (offline) {
+      setLoading(false);
+      return;
+    }
+
     let active = true;
 
     supabase.auth.getSession().then(({ data, error }) => {
@@ -43,17 +48,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       active = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [offline]);
 
   const value = useMemo<AuthContextValue>(() => ({
     user,
     session,
     loading,
     signIn: async (email: string, password: string) => {
+      if (offline) throw new Error('Sign in requires cloud mode.');
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
     },
     signUp: async (email: string, password: string) => {
+      if (offline) throw new Error('Sign up requires cloud mode.');
       const { data, error } = await supabase.auth.signUp({ email, password });
       if (error) throw error;
 
@@ -64,10 +71,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return 'Account created. Check your email to confirm the account before signing in.';
     },
     signOut: async () => {
+      if (offline) return;
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
     },
-  }), [loading, session, user]);
+  }), [loading, offline, session, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
