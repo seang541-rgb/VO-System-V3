@@ -71,35 +71,53 @@ serve(async (request) => {
         .map((message) => message.content ?? null),
     ));
 
-    const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/consume_agent_turn_credit`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        apikey: anonKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        p_turn_id: requestedTurnId,
-        p_user_messages_hash: userMessagesHash,
-      }),
-    });
-    const rpcJson = await rpcRes.json().catch(() => null);
+    // DEV/owner bypass — when the BYPASS_CREDITS secret is set to "true" the
+    // proxy skips the per-turn billing RPC entirely. Set to a sentinel balance
+    // so the UI still reflects "credits remaining" without burning real ones.
+    // REMOVE the secret (or set to "false") to re-enable real billing.
+    const bypassCredits = Deno.env.get('BYPASS_CREDITS') === 'true';
 
-    if (!rpcRes.ok) {
-      const msg = rpcJson?.message || rpcJson?.error || '';
-      if (msg.includes('NO_CREDITS')) {
-        return jsonResponse(402, { error: 'Insufficient credits. Please top up.' });
+    let newBalance: number | null = null;
+    let turnId: string | null = requestedTurnId;
+
+    if (bypassCredits) {
+      newBalance = 9999;
+      if (!turnId) {
+        // Generate a v4-style UUID locally so downstream code that ties evidence
+        // to a turn still has a stable identifier.
+        turnId = crypto.randomUUID();
       }
-      if (msg.includes('INVALID_AGENT_TURN')) {
-        return jsonResponse(409, { error: 'This agent turn has expired or reached its hop limit.' });
+    } else {
+      const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/consume_agent_turn_credit`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: anonKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          p_turn_id: requestedTurnId,
+          p_user_messages_hash: userMessagesHash,
+        }),
+      });
+      const rpcJson = await rpcRes.json().catch(() => null);
+
+      if (!rpcRes.ok) {
+        const msg = rpcJson?.message || rpcJson?.error || '';
+        if (msg.includes('NO_CREDITS')) {
+          return jsonResponse(402, { error: 'Insufficient credits. Please top up.' });
+        }
+        if (msg.includes('INVALID_AGENT_TURN')) {
+          return jsonResponse(409, { error: 'This agent turn has expired or reached its hop limit.' });
+        }
+        return jsonResponse(500, { error: `Credit check failed: ${msg}` });
       }
-      return jsonResponse(500, { error: `Credit check failed: ${msg}` });
+
+      newBalance =
+        rpcJson && typeof rpcJson.credits_balance === 'number' ? rpcJson.credits_balance : null;
+      turnId =
+        rpcJson && typeof rpcJson.turn_id === 'string' ? rpcJson.turn_id : null;
     }
-
-    const newBalance =
-      rpcJson && typeof rpcJson.credits_balance === 'number' ? rpcJson.credits_balance : null;
-    const turnId =
-      rpcJson && typeof rpcJson.turn_id === 'string' ? rpcJson.turn_id : null;
 
     const { messages, tools, system, model } = payload;
     const nimMessages = [];
