@@ -21,10 +21,13 @@ export function useCopilotHistory(projectId?: string, conversationId?: string | 
   const [restoredMessages, setRestoredMessages] = useState<OpenAIMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const prevKeyRef = useRef('');
+  const requestIdRef = useRef(0);
 
   const loadHistory = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     if (!projectId) {
       setRestoredMessages([]);
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -33,7 +36,7 @@ export function useCopilotHistory(projectId?: string, conversationId?: string | 
       .from('copilot_messages')
       .select('*')
       .eq('project_id', projectId)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
       .limit(MAX_RESTORE);
 
     if (conversationId) {
@@ -44,12 +47,14 @@ export function useCopilotHistory(projectId?: string, conversationId?: string | 
 
     const { data, error } = await query;
 
+    if (requestId !== requestIdRef.current) return;
+
     if (error || !data) {
       setLoading(false);
       return;
     }
 
-    const messages: OpenAIMessage[] = (data as CopilotMessageRow[]).map((row) => {
+    const messages: OpenAIMessage[] = [...(data as CopilotMessageRow[])].reverse().map((row) => {
       const msg: OpenAIMessage = {
         role: row.role as OpenAIMessage['role'],
         content: row.content ?? undefined,
@@ -71,11 +76,11 @@ export function useCopilotHistory(projectId?: string, conversationId?: string | 
   }, [loadHistory, projectId, conversationId]);
 
   const persistMessage = useCallback(
-    async (msg: OpenAIMessage) => {
+    async (msg: OpenAIMessage, targetConversationId: string | null = conversationId ?? null) => {
       if (!projectId) return;
       await supabase.from('copilot_messages').insert({
         project_id: projectId,
-        conversation_id: conversationId ?? null,
+        conversation_id: targetConversationId,
         role: msg.role,
         content: msg.content ?? null,
         tool_calls: msg.tool_calls ?? null,

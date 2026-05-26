@@ -48,6 +48,15 @@ export function useAgentRuns(projectId?: string, userId?: string, conversationId
   const [runs, setRuns] = useState<AgentRunSummary[]>([]);
   const [pendingApproval, setPendingApproval] = useState<PendingAgentApproval | null>(null);
   const resolverRef = useRef<ApprovalResolver | null>(null);
+  const conversationIdRef = useRef<string | null>(conversationId ?? null);
+
+  useEffect(() => {
+    conversationIdRef.current = conversationId ?? null;
+  }, [conversationId]);
+
+  const bindConversation = useCallback((nextConversationId: string | null) => {
+    conversationIdRef.current = nextConversationId;
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!projectId || !userId) {
@@ -106,7 +115,7 @@ export function useAgentRuns(projectId?: string, userId?: string, conversationId
       const data = await invokeLedger<{ runId: string }>({
         operation: 'start_run',
         projectId,
-        conversationId: conversationId ?? null,
+        conversationId: conversationIdRef.current,
         request,
         roleId,
       });
@@ -173,7 +182,7 @@ export function useAgentRuns(projectId?: string, userId?: string, conversationId
       });
       void refresh();
     },
-  } : null, [conversationId, projectId, refresh, userId]);
+  } : null, [projectId, refresh, userId]);
 
   const decideApproval = useCallback(async (approved: boolean): Promise<ResumableApprovedAction | null> => {
     const approval = pendingApproval;
@@ -221,5 +230,5 @@ export function useAgentRuns(projectId?: string, userId?: string, conversationId
     };
   }, [pendingApproval, refresh, tracker]);
 
-  return { runs, pendingApproval, tracker, decideApproval, refresh };
+  return { runs, pendingApproval, tracker, decideApproval, refresh, bindConversation };
 }

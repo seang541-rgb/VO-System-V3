@@ -155,4 +155,30 @@ describe('Agent formal output approvals', () => {
     expect(executeAgentTool).not.toHaveBeenCalled();
     expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ kind: 'assistant_text' }));
   });
+
+  it('does not continue an earlier IFC tool task when the new message is only a greeting', async () => {
+    const session = new AgentSession(emptyToolContext());
+    session.restoreMessages([
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'old-query',
+          type: 'function',
+          function: { name: 'query_ifc', arguments: '{"model":"base","typeFilter":"IfcWall"}' },
+        }],
+      },
+      {
+        role: 'tool',
+        tool_call_id: 'old-query',
+        content: '{"model":"base","matched":0}',
+      },
+    ]);
+
+    const result = await session.send('你好', vi.fn());
+
+    expect(result).toContain('你好');
+    expect(fetch).not.toHaveBeenCalled();
+    expect(executeAgentTool).not.toHaveBeenCalled();
+  });
 });

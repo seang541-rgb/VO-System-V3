@@ -53,17 +53,23 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyRestoredRef = useRef(false);
+  const activeConversationRef = useRef<string | null>(null);
 
   const { conversations, activeId: activeConvId, create: createConv, switchTo: switchConv, remove: removeConv } = useCopilotConversations(projectId);
   const { restoredMessages, persistMessage, clearHistory } = useCopilotHistory(projectId, activeConvId);
   const { buildMemoryPrompt, addMemory } = useCopilotMemory(userId);
-  const { runs, pendingApproval, tracker, decideApproval } = useAgentRuns(projectId, userId, activeConvId);
+  const { runs, pendingApproval, tracker, decideApproval, bindConversation } = useAgentRuns(projectId, userId, activeConvId);
 
   const baseReady = toolContext.baseComponents.length > 0;
   const revReady = toolContext.revisionComponents.length > 0;
   const compareReady = !!toolContext.voResults;
   const recoveredApprovalNeedsResult = Boolean(pendingApproval?.recovered && !compareReady);
   const canRunVoPack = signedIn && !busy && !pendingApproval && (compareReady || (baseReady && revReady));
+
+  useEffect(() => {
+    activeConversationRef.current = activeConvId;
+    bindConversation(activeConvId);
+  }, [activeConvId, bindConversation]);
 
   // Proactive suggestions — recalculate when workspace state changes
   useEffect(() => {
@@ -82,7 +88,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
     sessionRef.current.setMemoryPrompt(buildMemoryPrompt());
     sessionRef.current.setRole(activeRole?.id ?? null);
     sessionRef.current.setOnPersistMessage((msg: OpenAIMessage) => {
-      void persistMessage(msg);
+      void persistMessage(msg, activeConversationRef.current);
     });
     sessionRef.current.setOnMemoryExtracted((memories: ExtractedMemory[]) => {
       for (const m of memories) {
@@ -138,9 +144,13 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
       else sessionRef.current.updateContext(toolContext);
 
       // Auto-create conversation on first message if none exists
-      if (!activeConvId && projectId) {
+      if (!activeConversationRef.current && projectId) {
         const title = trimmed.length > 40 ? trimmed.slice(0, 40) + '…' : trimmed;
-        await createConv(title);
+        const conversationId = await createConv(title);
+        if (conversationId) {
+          activeConversationRef.current = conversationId;
+          bindConversation(conversationId);
+        }
       }
 
       pushEntry({ id: newId(), kind: 'user', text: trimmed });
@@ -198,7 +208,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
         setActiveToolLabel(null);
       }
     },
-    [busy, onCreditsUpdate, pushEntry, signedIn, toolContext],
+    [bindConversation, busy, createConv, onCreditsUpdate, projectId, pushEntry, signedIn, toolContext],
   );
 
   const handleApprovalDecision = useCallback(async (approved: boolean) => {
@@ -256,8 +266,12 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
     else sessionRef.current.updateContext(toolContext);
     sessionRef.current.setExecutionTracker(tracker);
 
-    if (!activeConvId && projectId) {
-      await createConv('Autonomous VO Report Pack');
+    if (!activeConversationRef.current && projectId) {
+      const conversationId = await createConv('Autonomous VO Report Pack');
+      if (conversationId) {
+        activeConversationRef.current = conversationId;
+        bindConversation(conversationId);
+      }
     }
 
     pushEntry({ id: newId(), kind: 'user', text: 'Run Autonomous VO Report Pack' });
@@ -301,7 +315,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
       setBusy(false);
       setActiveToolLabel(null);
     }
-  }, [activeConvId, canRunVoPack, createConv, onCreditsUpdate, projectId, pushEntry, toolContext, tracker]);
+  }, [bindConversation, canRunVoPack, createConv, onCreditsUpdate, projectId, pushEntry, toolContext, tracker]);
 
   const handleReset = () => {
     sessionRef.current?.reset();
@@ -319,7 +333,11 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
     setAgentStep(0);
     historyRestoredRef.current = false;
     setShowConvList(false);
-    await createConv();
+    const conversationId = await createConv();
+    if (conversationId) {
+      activeConversationRef.current = conversationId;
+      bindConversation(conversationId);
+    }
   };
 
   const handleSwitchConversation = (id: string) => {
@@ -328,6 +346,8 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
     setActiveToolLabel(null);
     setAgentStep(0);
     historyRestoredRef.current = false;
+    activeConversationRef.current = id;
+    bindConversation(id);
     switchConv(id);
     setShowConvList(false);
   };
@@ -548,7 +568,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
             <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4 text-sm text-slate-300">
               <div className="font-semibold text-blue-400">你好，我系 VO System 内嵌嘅 IFC Copilot。</div>
               <div className="mt-1 text-xs text-slate-400">
-                上传 base / revision IFC 后可以叫我对比、总结商业影响、或直接生成 Excel。每次对话会消耗 1 个 credit。
+                上传 base / revision IFC 后可以叫我对比、总结商业影响、或直接生成 Excel。执行 AI 分析任务会消耗 credit，简单问候不会扣费。
               </div>
             </div>
             <div className="grid gap-2 md:grid-cols-2">
