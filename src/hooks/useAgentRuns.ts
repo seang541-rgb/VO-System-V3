@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import type { AgentExecutionTracker, AgentEvidenceType } from '../agent/agent-client';
+import type { AgentExecutionTracker } from '../agent/agent-client';
 
 export interface AgentRunSummary {
   id: string;
@@ -15,11 +15,17 @@ export interface PendingAgentApproval {
   runId: string;
   actionType: string;
   payload: Record<string, unknown>;
+  recovered: boolean;
+}
+
+export interface ResumableApprovedAction {
+  runId: string;
+  actionType: string;
+  payload: Record<string, unknown>;
 }
 
 type ApprovalResolver = {
   id: string;
-  runId: string;
   resolve: (approved: boolean) => void;
 };
 
@@ -27,6 +33,14 @@ function compactPayload(value: unknown): unknown {
   const serialized = JSON.stringify(value ?? null);
   if (serialized.length <= 20000) return value ?? null;
   return { truncated: true, preview: serialized.slice(0, 20000) };
+}
+
+async function invokeLedger<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('agent-ledger', { body });
+  if (error) throw error;
+  if (!data || typeof data !== 'object') throw new Error('Agent ledger returned an invalid response.');
+  if ('error' in data && typeof data.error === 'string') throw new Error(data.error);
+  return data as T;
 }
 
 export function useAgentRuns(projectId?: string, userId?: string, conversationId?: string | null) {
@@ -37,117 +51,157 @@ export function useAgentRuns(projectId?: string, userId?: string, conversationId
   const refresh = useCallback(async () => {
     if (!projectId || !userId) {
       setRuns([]);
+      setPendingApproval(null);
       return;
     }
-    const { data } = await supabase
-      .from('agent_runs')
-      .select('id, user_request, status, started_at, completed_at')
-      .eq('project_id', projectId)
-      .eq('user_id', userId)
-      .order('started_at', { ascending: false })
-      .limit(6);
-    setRuns((data as AgentRunSummary[] | null) ?? []);
+
+    const [runsResult, approvalResult] = await Promise.all([
+      supabase
+        .from('agent_runs')
+        .select('id, user_request, status, started_at, completed_at')
+        .eq('project_id', projectId)
+        .eq('user_id', userId)
+        .order('started_at', { ascending: false })
+        .limit(6),
+      supabase
+        .from('agent_approvals')
+        .select('id, run_id, action_type, action_payload')
+        .eq('project_id', projectId)
+        .eq('user_id', userId)
+        .eq('status', 'pending')
+        .order('requested_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    setRuns((runsResult.data as AgentRunSummary[] | null) ?? []);
+    if (!resolverRef.current) {
+      const approval = approvalResult.data as {
+        id: string;
+        run_id: string;
+        action_type: string;
+        action_payload: Record<string, unknown>;
+      } | null;
+      setPendingApproval(approval ? {
+        id: approval.id,
+        runId: approval.run_id,
+        actionType: approval.action_type,
+        payload: approval.action_payload,
+        recovered: true,
+      } : null);
+    }
   }, [projectId, userId]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  const tracker: AgentExecutionTracker | null = projectId && userId ? {
+  const tracker = useMemo<AgentExecutionTracker | null>(() => projectId && userId ? {
     startRun: async ({ request, roleId }) => {
-      const { data } = await supabase
-        .from('agent_runs')
-        .insert({
-          project_id: projectId,
-          conversation_id: conversationId ?? null,
-          user_id: userId,
-          user_request: request,
-          role_id: roleId,
-          status: 'running',
-        })
-        .select('id')
-        .single();
+      const data = await invokeLedger<{ runId: string }>({
+        operation: 'start_run',
+        projectId,
+        conversationId: conversationId ?? null,
+        request,
+        roleId,
+      });
       void refresh();
-      return (data as { id?: string } | null)?.id ?? null;
+      return data.runId;
     },
     completeRun: async (runId, status, output) => {
-      await supabase
-        .from('agent_runs')
-        .update({
-          status,
-          final_response: status === 'completed' ? output : null,
-          error_message: status === 'failed' ? output : null,
-          completed_at: new Date().toISOString(),
-        })
-        .eq('id', runId);
+      await invokeLedger({
+        operation: 'complete_run',
+        runId,
+        status,
+        output,
+      });
       void refresh();
     },
     recordStep: async (runId, step) => {
-      const { data } = await supabase
-        .from('agent_steps')
-        .insert({
-          run_id: runId,
-          sequence_no: step.sequenceNo,
-          step_type: step.stepType,
-          tool_name: step.toolName ?? null,
-          status: step.status,
-          input_json: compactPayload(step.input),
-          output_json: compactPayload(step.output),
-          duration_ms: step.durationMs ?? null,
-        })
-        .select('id')
-        .single();
-      return (data as { id?: string } | null)?.id ?? null;
+      const data = await invokeLedger<{ stepId: string }>({
+        operation: 'record_step',
+        runId,
+        stepType: step.stepType,
+        toolName: step.toolName ?? null,
+        status: step.status,
+        input: compactPayload(step.input),
+        output: compactPayload(step.output),
+        durationMs: step.durationMs ?? null,
+      });
+      return data.stepId;
     },
     recordEvidence: async (runId, stepId, evidence) => {
-      await supabase.from('agent_evidence').insert({
-        run_id: runId,
-        step_id: stepId,
-        project_id: projectId,
-        evidence_type: evidence.type satisfies AgentEvidenceType,
+      await invokeLedger({
+        operation: 'record_evidence',
+        runId,
+        stepId,
+        evidenceType: evidence.type,
         title: evidence.title,
-        payload_json: compactPayload(evidence.payload),
+        payload: compactPayload(evidence.payload),
       });
     },
     requestApproval: async (runId, actionType, payload) => {
-      const { data } = await supabase
-        .from('agent_approvals')
-        .insert({
-          run_id: runId,
-          project_id: projectId,
-          user_id: userId,
-          action_type: actionType,
-          action_payload: compactPayload(payload),
-        })
-        .select('id')
-        .single();
-      const approvalId = (data as { id?: string } | null)?.id;
-      if (!approvalId) return false;
-      await supabase.from('agent_runs').update({ status: 'waiting_approval' }).eq('id', runId);
-      setPendingApproval({ id: approvalId, runId, actionType, payload });
+      const data = await invokeLedger<{ approvalId: string }>({
+        operation: 'request_approval',
+        runId,
+        actionType,
+        payload: compactPayload(payload),
+      });
+      setPendingApproval({
+        id: data.approvalId,
+        runId,
+        actionType,
+        payload,
+        recovered: false,
+      });
       void refresh();
       return await new Promise<boolean>((resolve) => {
-        resolverRef.current = { id: approvalId, runId, resolve };
+        resolverRef.current = { id: data.approvalId, resolve };
       });
     },
-  } : null;
+  } : null, [conversationId, projectId, refresh, userId]);
 
-  const decideApproval = useCallback(async (approved: boolean) => {
-    const resolver = resolverRef.current;
-    if (!resolver) return;
-    await supabase
-      .from('agent_approvals')
-      .update({
-        status: approved ? 'approved' : 'rejected',
-        decided_at: new Date().toISOString(),
-      })
-      .eq('id', resolver.id);
-    await supabase.from('agent_runs').update({ status: 'running' }).eq('id', resolver.runId);
-    resolverRef.current = null;
+  const decideApproval = useCallback(async (approved: boolean): Promise<ResumableApprovedAction | null> => {
+    const approval = pendingApproval;
+    if (!approval) return null;
+    const liveResolver = resolverRef.current?.id === approval.id ? resolverRef.current : null;
+
+    await invokeLedger({
+      operation: 'decide_approval',
+      approvalId: approval.id,
+      approved,
+    });
+
     setPendingApproval(null);
-    resolver.resolve(approved);
-    void refresh();
-  }, [refresh]);
+    if (!approved) {
+      if (liveResolver) {
+        resolverRef.current = null;
+        liveResolver.resolve(false);
+      } else if (tracker) {
+        await tracker.completeRun(
+          approval.runId,
+          'cancelled',
+          'Formal output approval was rejected after the task session was interrupted.',
+        );
+      }
+      void refresh();
+      return null;
+    }
 
-  return { runs, pendingApproval, tracker, decideApproval };
+    const claimed = await invokeLedger<ResumableApprovedAction>({
+      operation: 'claim_approval',
+      approvalId: approval.id,
+    });
+    if (liveResolver) {
+      resolverRef.current = null;
+      liveResolver.resolve(true);
+      void refresh();
+      return null;
+    }
+
+    void refresh();
+    return claimed;
+  }, [pendingApproval, refresh, tracker]);
+
+  return { runs, pendingApproval, tracker, decideApproval, refresh };
 }

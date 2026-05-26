@@ -4,6 +4,9 @@ verify_jwt = false
 [functions.dispatch-webhook]
 verify_jwt = true
 
+[functions.agent-ledger]
+verify_jwt = true
+
 [functions.create-checkout]
 verify_jwt = true
 

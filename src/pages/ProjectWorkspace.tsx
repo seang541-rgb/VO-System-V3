@@ -165,6 +165,7 @@ export default function ProjectWorkspace() {
   const resultsTableScrollRef = useRef<HTMLDivElement>(null);
   const resultsScrollbarRef = useRef<HTMLDivElement>(null);
   const resultsScrollbarInnerRef = useRef<HTMLDivElement>(null);
+  const restoredLatestComparisonRef = useRef(false);
 
   // Suppress unused variable warnings for legacy state used only in JSX
   void showLegacyBanner;
@@ -294,6 +295,18 @@ export default function ProjectWorkspace() {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(BQ_MAPPING_STORAGE_KEY, JSON.stringify(labelMappings));
   }, [labelMappings]);
+
+  useEffect(() => {
+    if (restoredLatestComparisonRef.current || voHistory.loading || voHistory.comparisons.length === 0 || voResults) {
+      return;
+    }
+    const latest = voHistory.comparisons[0];
+    restoredLatestComparisonRef.current = true;
+    setSelectedComparisonId(latest.id);
+    setVoResults(latest.results_json as VoComparisonResults);
+    setCompareState('success');
+    setCompareMessage('Restored the latest saved comparison for this project.');
+  }, [voHistory.comparisons, voHistory.loading, voResults]);
 
   useEffect(() => {
     const main = resultsTableScrollRef.current;

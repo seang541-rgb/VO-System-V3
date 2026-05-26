@@ -94,4 +94,22 @@ describe('Agent formal output approvals', () => {
 
     expect(executeAgentTool).not.toHaveBeenCalled();
   });
+
+  it('resumes a claimed formal output and closes its original run', async () => {
+    const tracker = buildTracker();
+    const session = new AgentSession(emptyToolContext());
+    const onEvent = vi.fn();
+    vi.mocked(executeAgentTool).mockResolvedValueOnce({ ok: true });
+    session.setExecutionTracker(tracker);
+
+    const result = await session.resumeApprovedAction('run-1', 'export_vo_excel', {}, onEvent);
+
+    expect(executeAgentTool).toHaveBeenCalledWith('export_vo_excel', {}, expect.any(Object));
+    expect(tracker.recordEvidence).toHaveBeenCalledWith(
+      'run-1',
+      'step-1',
+      expect.objectContaining({ type: 'report' }),
+    );
+    expect(tracker.completeRun).toHaveBeenCalledWith('run-1', 'completed', result);
+  });
 });

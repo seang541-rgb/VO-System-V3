@@ -29,6 +29,8 @@ Apply the SQL scripts in Supabase SQL Editor in this order:
    rates, webhooks, API keys, and the remaining Agent tables.
 5. `supabase/migrations/20260525164241_agent_run_ledger.sql` for persisted
    Agent runs, tool evidence, and approval records for formal output actions.
+6. `supabase/migrations/20260525182830_agent_ledger_authority.sql` to make
+   Agent ledger rows append-only from the browser and support resumable approval claims.
 
 The billing prerequisites script creates `user_credits`, grants five credits
 to existing and newly registered users, and creates both `consume_credit()` and
@@ -37,7 +39,9 @@ must only be written by trusted billing code using the service role.
 
 The Agent run ledger records each cloud Copilot request and its tool steps.
 `export_vo_excel` and `generate_report` require a recorded human approval
-before the Agent is allowed to create a formal downloadable output.
+before the Agent is allowed to create a formal downloadable output. Ledger
+writes and approval transitions are handled by the authenticated
+`agent-ledger` Edge Function; the browser has read-only access to these rows.
 
 ## Edge Functions
 
@@ -45,6 +49,8 @@ Deploy these functions:
 
 - `agent-proxy`: authenticated Copilot proxy. One credit is consumed per user
   turn; tool continuation hops reuse the recorded turn, with a ten-hop cap.
+- `agent-ledger`: authenticated append-only run/evidence ledger and resumable
+  approval state machine for formal outputs.
 - `create-checkout`: Stripe checkout for credit top-ups.
 - `stripe-webhook`: verified Stripe webhook which adds purchased credits.
 - `dispatch-webhook`: authenticated project event delivery for user webhooks.

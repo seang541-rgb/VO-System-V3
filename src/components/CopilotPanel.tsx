@@ -62,6 +62,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
   const baseReady = toolContext.baseComponents.length > 0;
   const revReady = toolContext.revisionComponents.length > 0;
   const compareReady = !!toolContext.voResults;
+  const recoveredApprovalNeedsResult = Boolean(pendingApproval?.recovered && !compareReady);
 
   // Proactive suggestions — recalculate when workspace state changes
   useEffect(() => {
@@ -198,6 +199,55 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
     },
     [busy, onCreditsUpdate, pushEntry, signedIn, toolContext],
   );
+
+  const handleApprovalDecision = useCallback(async (approved: boolean) => {
+    const recovered = pendingApproval?.recovered ?? false;
+    if (recovered) {
+      setBusy(true);
+      setActiveToolLabel(null);
+    }
+    try {
+      const resumableAction = await decideApproval(approved);
+      if (!resumableAction) return;
+      if (!sessionRef.current) sessionRef.current = new AgentSession(toolContext);
+      else sessionRef.current.updateContext(toolContext);
+      sessionRef.current.setExecutionTracker(tracker);
+      await sessionRef.current.resumeApprovedAction(
+        resumableAction.runId,
+        resumableAction.actionType,
+        resumableAction.payload,
+        (event) => {
+          if (event.kind === 'tool_start') {
+            setActiveToolLabel(event.name);
+            pushEntry({ id: newId(), kind: 'tool', text: event.name, meta: 'Resumed after approval' });
+          } else if (event.kind === 'tool_end') {
+            setActiveToolLabel(null);
+            pushEntry({
+              id: newId(),
+              kind: 'tool',
+              text: `${event.name} - ${event.durationMs}ms`,
+              meta: truncate(JSON.stringify(event.result), 400),
+            });
+          } else if (event.kind === 'assistant_text') {
+            pushEntry({ id: newId(), kind: 'assistant', text: event.text });
+          } else if (event.kind === 'error') {
+            pushEntry({ id: newId(), kind: 'error', text: event.message });
+          }
+        },
+      );
+    } catch (error) {
+      pushEntry({
+        id: newId(),
+        kind: 'error',
+        text: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      if (recovered) {
+        setBusy(false);
+        setActiveToolLabel(null);
+      }
+    }
+  }, [decideApproval, pendingApproval, pushEntry, toolContext, tracker]);
 
   const handleReset = () => {
     sessionRef.current?.reset();
@@ -369,20 +419,26 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
                 Copilot wants to execute <span className="font-mono text-amber-200">{pendingApproval.actionType}</span>.
               </div>
               <div className="mt-1 text-xs text-slate-400">
-                This creates a formal downloadable output. The decision is recorded in the run ledger.
+                {recoveredApprovalNeedsResult
+                  ? 'Loading the latest saved comparison before this approved output can resume.'
+                  : pendingApproval.recovered
+                  ? 'This interrupted task is waiting for your recorded decision. Approval resumes the output.'
+                  : 'This creates a formal downloadable output. The decision is recorded in the run ledger.'}
               </div>
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
-                  onClick={() => void decideApproval(true)}
-                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500"
+                  onClick={() => void handleApprovalDecision(true)}
+                  disabled={(pendingApproval.recovered && busy) || recoveredApprovalNeedsResult}
+                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-50"
                 >
                   Approve Output
                 </button>
                 <button
                   type="button"
-                  onClick={() => void decideApproval(false)}
-                  className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-700"
+                  onClick={() => void handleApprovalDecision(false)}
+                  disabled={pendingApproval.recovered && busy}
+                  className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-700 disabled:opacity-50"
                 >
                   Reject
                 </button>

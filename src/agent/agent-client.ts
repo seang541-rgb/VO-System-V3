@@ -90,6 +90,7 @@ Style:
 
 Tool failure handling (CRITICAL):
 - If any tool returns an error containing "PREREQUISITE_NOT_MET", STOP calling tools immediately. Do NOT try other tools to "work around" the problem. Reply in plain text and tell the user exactly what action they need to take (upload files, click a button, etc.).
+- Formal deliverables from export_vo_excel or generate_report require recorded human approval. If approval is rejected or unavailable, acknowledge it and do not request another formal output in the same turn.
 - Never call the same tool twice with identical arguments. You may chain up to 8 tools per turn for complex multi-step workflows (e.g. compare_ifc → summarize_commercial_impact → analyze_contract_clause → export_vo_excel).
 - If a tool returns any other error, explain the issue to the user once and ask how to proceed — do not retry unless the user redirects you.
 
@@ -355,6 +356,56 @@ export class AgentSession {
 
   getMessages(): readonly OpenAIMessage[] {
     return this.messages;
+  }
+
+  async resumeApprovedAction(
+    runId: string,
+    name: string,
+    args: Record<string, unknown>,
+    onEvent: (event: AgentEvent) => void,
+  ): Promise<string> {
+    const tracker = this.executionTracker;
+    if (!tracker || !APPROVAL_GATED_TOOLS.has(name)) {
+      throw new Error('This approved action cannot be resumed.');
+    }
+
+    onEvent({ kind: 'tool_start', name, input: args });
+    const started = performance.now();
+    let result: unknown;
+    try {
+      result = await executeAgentTool(name, args, this.ctx);
+    } catch (error) {
+      result = { error: error instanceof Error ? error.message : String(error) };
+    }
+    const durationMs = Math.round(performance.now() - started);
+    onEvent({ kind: 'tool_end', name, result, durationMs });
+
+    const errorText =
+      result && typeof result === 'object' && 'error' in result
+        ? String((result as Record<string, unknown>).error ?? 'Approved action failed.')
+        : null;
+    const stepId = await tracker.recordStep(runId, {
+      sequenceNo: 1,
+      stepType: 'tool',
+      toolName: name,
+      status: errorText ? 'failed' : 'completed',
+      input: args,
+      output: result,
+      durationMs,
+    });
+    const evidence = evidenceForTool(name, result);
+    if (evidence) await tracker.recordEvidence(runId, stepId, evidence);
+
+    if (errorText) {
+      onEvent({ kind: 'error', message: errorText });
+      await tracker.completeRun(runId, 'failed', errorText);
+      return errorText;
+    }
+
+    const message = `${name} completed after recorded approval.`;
+    onEvent({ kind: 'assistant_text', text: message });
+    await tracker.completeRun(runId, 'completed', message);
+    return message;
   }
 
   async send(userText: string, onEvent: (event: AgentEvent) => void): Promise<string> {
