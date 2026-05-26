@@ -1,7 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { OPENAI_TOOL_DEFINITIONS, executeAgentTool, getAvailableTools, buildToolRoutingHint, type ToolContext } from './tools';
 import { ContextManager } from './context-manager';
-import { buildRoleOverlay } from './roles';
 
 // ── OpenAI-compatible message types (used by NVIDIA NIM / DeepSeek V4 Pro) ────
 
@@ -65,7 +64,7 @@ export interface AgentExecutionTracker {
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are "IFC Copilot", an embedded assistant inside the VO System — a browser-based tool for comparing IFC building models and generating Variation Order (VO) substantiation workbooks for QS / construction professionals.
+const SYSTEM_PROMPT = `You are "VO Copilot", an embedded assistant inside the VO System — a browser-based tool for comparing IFC building models and reading project documents to generate Variation Order (VO) substantiation workbooks for QS / construction professionals.
 
 You help the user by:
 - Answering questions about loaded IFC models (base and revision).
@@ -96,6 +95,11 @@ Style:
 - When you call tools, show your reasoning briefly before calling them.
 - Use the user's preferred language (Chinese / English / mixed) based on their prompt.
 
+Evidence discipline (HIGHEST PRIORITY):
+- Facts about project files, comparison quantities, contract clauses, regulations, measurement rules, templates, or rates are verified only when they are supplied by the user or returned by an appropriate tool.
+- If a lookup tool returns zero matches, no template, or an error, say that the system could not verify the answer. Do NOT fill gaps from general model knowledge, invent citations, or state a number as confirmed.
+- General background knowledge may be offered only when the user explicitly asks for an unverified explanation, and it must be labeled as unverified. It must never be used as a compliance, valuation, or claim conclusion.
+
 Tool failure handling (CRITICAL):
 - If any tool returns an error containing "PREREQUISITE_NOT_MET", STOP calling tools immediately. Do NOT try other tools to "work around" the problem. Reply in plain text and tell the user exactly what action they need to take (upload files, click a button, etc.).
 - Formal deliverables from export_vo_excel or generate_report require recorded human approval. If approval is rejected or unavailable, acknowledge it and do not request another formal output in the same turn.
@@ -121,7 +125,7 @@ Tool selection guidance:
 - For VO letter / approval drafts → use get_vo_template, then walk the user through filling fields.
 
 Regulatory answer format (CRITICAL):
-- When lookup_regulation returns multiple matches, do NOT pick blindly. Read every "title" / "title_cn" carefully and choose the row whose by_law_number / standard_number is the closest fit to the user's specific question. Example: "minimum ceiling height for residential ROOMS" → By-Law 23 (habitable rooms, 2.75 m), NOT By-Law 25 (kitchen, 2.4 m).
+- When lookup_regulation returns multiple matches, do NOT pick blindly. Read every "title" / "title_cn" carefully and choose only a row whose described scenario explicitly fits the user's question (for example, do not substitute a kitchen requirement for a habitable-room question).
 - ALWAYS quote the specific identifier in your reply: "UBBL Part V, By-Law 23" / "MS 1064:2014" / "JKR BIM Mandate 2017 (RM 100M threshold)". Never just say "Part V" without the by-law number.
 - If the user's question is ambiguous and multiple rows could fit, list 2-3 most relevant matches with their by-law numbers and ask the user which scenario they mean (residential / kitchen / bathroom / commercial).
 
@@ -342,7 +346,6 @@ async function callAgentProxy(
     dynamicContext?: string;
     availableTools?: typeof OPENAI_TOOL_DEFINITIONS;
     routingHint?: string;
-    roleOverlay?: string;
     turnId?: string | null;
     signal?: AbortSignal;
     onTextDelta?: (text: string) => void;
@@ -374,7 +377,7 @@ async function callAgentProxy(
       messages,
       tools,
       turn_id: options.turnId ?? null,
-      system: SYSTEM_PROMPT + (options.roleOverlay || '') + (options.dynamicContext || '') + (options.routingHint || '') + (options.memoryPrompt || ''),
+      system: SYSTEM_PROMPT + (options.dynamicContext || '') + (options.routingHint || '') + (options.memoryPrompt || ''),
     }),
   });
 
@@ -409,20 +412,119 @@ function extractAssistantMessage(response: unknown): OpenAIMessage | null {
 // ── AgentSession ──────────────────────────────────────────────────────────────
 
 const APPROVAL_GATED_TOOLS = new Set(['export_vo_excel', 'generate_report']);
-const AUTONOMOUS_WORKFLOW_FLAG = '__autonomousWorkflow';
+const GROUNDED_LOOKUP_TOOLS = new Set([
+  'lookup_regulation',
+  'lookup_measurement_code',
+  'get_vo_template',
+  'estimate_cost',
+]);
 
 function toolError(result: unknown): string | null {
   if (!result || typeof result !== 'object' || !('error' in result)) return null;
   return String((result as Record<string, unknown>).error ?? 'Tool failed.');
 }
 
-function executableArgs(args: Record<string, unknown>): Record<string, unknown> {
-  const { [AUTONOMOUS_WORKFLOW_FLAG]: _workflowFlag, ...cleanArgs } = args;
-  return cleanArgs;
+function groundedLookupHasEvidence(name: string, result: unknown): boolean | null {
+  if (!GROUNDED_LOOKUP_TOOLS.has(name)) return null;
+  if (!result || typeof result !== 'object' || 'error' in result) return false;
+  const row = result as Record<string, unknown>;
+
+  if (name === 'get_vo_template') return !!row.template;
+
+  if (typeof row.count === 'number') return row.count > 0;
+  if (name === 'lookup_regulation' && row.counts && typeof row.counts === 'object') {
+    return Object.values(row.counts as Record<string, unknown>)
+      .some((count) => typeof count === 'number' && count > 0);
+  }
+  return false;
+}
+
+function unverifiedLookupReply(userText: string): string {
+  if (/[\u4e00-\u9fff]/u.test(userText)) {
+    return '我已经查询了当前知识库，但没有找到能够支撑结论的匹配记录。因此我不能可靠地给出具体条文、编号、标准数值、模板或报价。请提供更具体的关键词或补充资料后，我可以继续核验。';
+  }
+  return 'I searched the current knowledge base but found no matching record that supports a conclusion. I cannot reliably provide a specific citation, standard value, template, or rate without evidence. Please provide a narrower term or source material and I can verify it.';
+}
+
+function prerequisiteReply(error: string, userText: string): string {
+  const zh = /[\u4e00-\u9fff]/u.test(userText);
+  if (error.includes('no queryable components') || error.includes('No IFC model is currently loaded')) {
+    return zh
+      ? '当前没有可查询的 IFC 模型内容，因此我不能判断模型中是否存在相关构件。请先加载或重新加载要查询的 IFC 文件，再重新提问。'
+      : 'There is no queryable IFC model content available, so I cannot determine whether matching elements exist. Please load or reload the IFC file and ask again.';
+  }
+  if (error.includes('not loaded both IFC files') || error.includes('has not loaded IFC files')) {
+    return zh
+      ? '当前缺少完整的 IFC 输入，无法进行比较或基于比较的分析。请先上传 Base IFC 与 Revision IFC，然后重新提问。'
+      : 'The complete IFC input is not available, so I cannot run a comparison or comparison-based analysis. Please load both the Base IFC and Revision IFC files and ask again.';
+  }
+  if (error.includes('no VO comparison has been run') || error.includes('No comparison results available')) {
+    return zh
+      ? '当前还没有 VO 比较结果，因此我不能进行后续结论或正式输出。请先运行 VO Comparison，再重新提问。'
+      : 'There is no VO comparison result yet, so I cannot provide downstream conclusions or formal output. Please run VO Comparison and ask again.';
+  }
+  if (error.includes('No image file available for OCR') || error.includes('No evidence document is available for reading')) {
+    return zh
+      ? '当前没有可供 OCR 分析的文件。请先上传扫描图片或 PDF，再重新提问。'
+      : 'There is no file available for OCR. Please upload a scanned image or PDF and ask again.';
+  }
+  if (error.includes('currently loaded model is')) {
+    return zh
+      ? '当前 3D 视图中的模型与所请求的审核对象不一致，因此我不能生成审核结论。请切换到目标模型后重试。'
+      : 'The model currently shown in the 3D viewer does not match the requested audit target. Switch to the target model and try again.';
+  }
+  return zh
+    ? '当前缺少执行此分析所需的输入或状态，因此我不能可靠地下结论。请先完成界面提示的准备步骤后重新提问。'
+    : 'A required input or workspace state is missing, so I cannot provide a reliable conclusion. Complete the required preparation step and ask again.';
+}
+
+function localWorkspaceGateReply(userText: string, ctx: ToolContext): string | null {
+  const text = userText.trim().toLowerCase();
+  const isChinese = /[\u4e00-\u9fff]/u.test(userText);
+  const compareIntent =
+    /(比较|对比|变更|差异|compare|comparison|differences?|changes?)/iu.test(text)
+    && /(base|revision|基准|修订|ifc|模型|vo)/iu.test(text);
+  if (compareIntent && (ctx.baseComponents.length === 0 || ctx.revisionComponents.length === 0)) {
+    const missing: string[] = [];
+    if (ctx.baseComponents.length === 0) missing.push('Base IFC');
+    if (ctx.revisionComponents.length === 0) missing.push('Revision IFC');
+    return isChinese
+      ? `当前无法执行比较，因为还没有加载 ${missing.join(' 与 ')}。请先加载所需 IFC 文件，再重新提问。`
+      : `I cannot run the comparison because ${missing.join(' and ')} ${missing.length > 1 ? 'are' : 'is'} not loaded. Please load the required IFC file${missing.length > 1 ? 's' : ''} and ask again.`;
+  }
+
+  const ocrIntent = /(ocr|文字识别|识别(?:这|该|图片|扫描|文件|pdf)|读取(?:这|该|上传的)?(?:pdf|文档|扫描件)|扫描件|pdf\s*(?:内容|文字)|scan(?:ned)?\s+(?:image|document|file)|extract\s+text)/iu.test(text);
+  if (ocrIntent && !ctx.ocrFile) {
+    return isChinese
+      ? '当前没有可供 OCR 分析的文件。请先上传扫描图片或 PDF，再重新提问。'
+      : 'There is no file available for OCR. Please upload a scanned image or PDF and ask again.';
+  }
+
+  const explicitBase = /(base|基准)/iu.test(text);
+  const explicitRevision = /(revision|修订)/iu.test(text);
+  const modelQueryIntent =
+    /(ifc|模型|构件|墙|梁|柱|板|wall|beam|column|slab|component)/iu.test(text)
+    && /(多少|有无|有没有|查询|检查|查找|列出|里面有|包含|count|how many|find|show|list|contain|inspect|check)/iu.test(text);
+  if (modelQueryIntent) {
+    const targets: string[] = [];
+    if (explicitBase && ctx.baseComponents.length === 0) targets.push('Base IFC');
+    if (explicitRevision && ctx.revisionComponents.length === 0) targets.push('Revision IFC');
+    if (!explicitBase && !explicitRevision && ctx.baseComponents.length === 0 && ctx.revisionComponents.length === 0) {
+      targets.push('IFC model');
+    }
+    if (targets.length > 0) {
+      return isChinese
+        ? `当前没有可查询的 ${targets.join(' 或 ')} 模型内容，因此我不能判断其中是否存在相关构件。请先加载对应 IFC 文件，再重新提问。`
+        : `There is no queryable ${targets.join(' or ')} model content available, so I cannot determine whether matching elements exist. Please load the corresponding IFC file and ask again.`;
+    }
+  }
+
+  return null;
 }
 
 function evidenceForTool(name: string, result: unknown): { type: AgentEvidenceType; title: string; payload: unknown } | null {
   if (!result || typeof result !== 'object' || 'error' in result) return null;
+  if (groundedLookupHasEvidence(name, result) === false) return null;
 
   switch (name) {
     case 'compare_ifc':
@@ -449,7 +551,6 @@ function evidenceForTool(name: string, result: unknown): { type: AgentEvidenceTy
 export class AgentSession {
   private messages: OpenAIMessage[] = [];
   private memoryPrompt = '';
-  private activeRoleId: string | null = null;
   private onPersistMessage: ((msg: OpenAIMessage) => void) | null = null;
   private onMemoryExtracted: ((memories: ExtractedMemory[]) => void) | null = null;
   private executionTracker: AgentExecutionTracker | null = null;
@@ -465,15 +566,6 @@ export class AgentSession {
   /** Set the long-term memory text to append to system prompt */
   setMemoryPrompt(prompt: string) {
     this.memoryPrompt = prompt;
-  }
-
-  /** Set active role for specialized persona */
-  setRole(roleId: string | null) {
-    this.activeRoleId = roleId;
-  }
-
-  getRole(): string | null {
-    return this.activeRoleId;
   }
 
   /** Set callback to persist each message to Supabase */
@@ -512,18 +604,6 @@ export class AgentSession {
     return this.messages;
   }
 
-  private async consumeAutonomousOutputCredit(onEvent: (event: AgentEvent) => void): Promise<void> {
-    const { data, error } = await supabase.rpc('consume_credit');
-    if (error) {
-      const message = error.message?.includes('NO_CREDITS')
-        ? 'No report credits remain. Top up before generating the formal output.'
-        : error.message;
-      throw new Error(message || 'Unable to validate report credit balance.');
-    }
-    const balance = data && typeof data.credits_balance === 'number' ? data.credits_balance : null;
-    onEvent({ kind: 'credits', balance });
-  }
-
   async resumeApprovedAction(
     runId: string,
     name: string,
@@ -535,15 +615,11 @@ export class AgentSession {
       throw new Error('This approved action cannot be resumed.');
     }
 
-    const isAutonomousWorkflow = args[AUTONOMOUS_WORKFLOW_FLAG] === true;
-    const cleanArgs = executableArgs(args);
-    if (isAutonomousWorkflow) await this.consumeAutonomousOutputCredit(onEvent);
-
-    onEvent({ kind: 'tool_start', name, input: cleanArgs });
+    onEvent({ kind: 'tool_start', name, input: args });
     const started = performance.now();
     let result: unknown;
     try {
-      result = await executeAgentTool(name, cleanArgs, this.ctx);
+      result = await executeAgentTool(name, args, this.ctx);
     } catch (error) {
       result = { error: error instanceof Error ? error.message : String(error) };
     }
@@ -559,7 +635,7 @@ export class AgentSession {
       stepType: 'tool',
       toolName: name,
       status: errorText ? 'failed' : 'completed',
-      input: cleanArgs,
+      input: args,
       output: result,
       durationMs,
     });
@@ -579,112 +655,6 @@ export class AgentSession {
     return message;
   }
 
-  async runVoReportWorkflow(onEvent: (event: AgentEvent) => void): Promise<string> {
-    const tracker = this.executionTracker;
-    if (!tracker) {
-      throw new Error('Autonomous workflows require a signed-in project with an auditable run ledger.');
-    }
-    const runId = await tracker.startRun({
-      request: 'Autonomous VO Report Pack: compare models, summarize impact, audit available model, and prepare PDF.',
-      roleId: 'workflow:vo-report-pack',
-    });
-    if (!runId) throw new Error('Unable to create the workflow run.');
-
-    let sequenceNo = 0;
-    const trackedTool = async (
-      name: string,
-      args: Record<string, unknown>,
-      required: boolean,
-    ): Promise<unknown> => {
-      onEvent({ kind: 'tool_start', name, input: args });
-      const started = performance.now();
-      let result: unknown;
-      try {
-        result = await executeAgentTool(name, args, this.ctx);
-      } catch (error) {
-        result = { error: error instanceof Error ? error.message : String(error) };
-      }
-      const durationMs = Math.round(performance.now() - started);
-      onEvent({ kind: 'tool_end', name, result, durationMs });
-      this.contextManager.recordToolResult(name, result);
-      const errorText = toolError(result);
-      const stepId = await tracker.recordStep(runId, {
-        sequenceNo: ++sequenceNo,
-        stepType: 'tool',
-        toolName: name,
-        status: errorText ? 'failed' : 'completed',
-        input: args,
-        output: result,
-        durationMs,
-      });
-      const evidence = evidenceForTool(name, result);
-      if (evidence) await tracker.recordEvidence(runId, stepId, evidence);
-      if (required && errorText) throw new Error(errorText);
-      return result;
-    };
-
-    try {
-      onEvent({
-        kind: 'thinking',
-        text: 'Starting VO Report Pack: comparison, commercial summary, available-model audit, then approval for the formal PDF.',
-        step: 1,
-        totalSteps: 4,
-      });
-      await trackedTool('compare_ifc', {}, true);
-      await trackedTool('summarize_commercial_impact', { topN: 10 }, true);
-
-      if (this.ctx.getActiveIfcHandle?.()) {
-        await trackedTool('audit_ifc', { model: this.ctx.activeIfcSlot ?? 'base', topN: 10 }, false);
-      } else {
-        const skipMessage = 'Model audit skipped because no active 3D model handle is available; the comparison and commercial evidence remain valid.';
-        onEvent({ kind: 'thinking', text: skipMessage, step: 3, totalSteps: 4 });
-        await tracker.recordStep(runId, {
-          sequenceNo: ++sequenceNo,
-          stepType: 'system',
-          toolName: 'audit_ifc',
-          status: 'completed',
-          output: { skipped: true, reason: skipMessage },
-        });
-      }
-
-      onEvent({
-        kind: 'thinking',
-        text: 'Evidence collection is complete. Waiting for approval before generating the formal PDF report.',
-        step: 4,
-        totalSteps: 4,
-      });
-      const reportArgs = { [AUTONOMOUS_WORKFLOW_FLAG]: true };
-      const approved = await tracker.requestApproval(runId, 'generate_report', reportArgs);
-      if (!approved) {
-        const message = 'VO Report Pack stopped because formal output approval was rejected.';
-        await tracker.recordStep(runId, {
-          sequenceNo: ++sequenceNo,
-          stepType: 'tool',
-          toolName: 'generate_report',
-          status: 'rejected',
-          input: {},
-          output: { error: 'APPROVAL_REJECTED' },
-        });
-        await tracker.completeRun(runId, 'cancelled', message);
-        onEvent({ kind: 'assistant_text', text: message });
-        return message;
-      }
-
-      await this.consumeAutonomousOutputCredit(onEvent);
-      await trackedTool('generate_report', {}, true);
-      await tracker.consumeApproval(runId, 'generate_report');
-      const message = 'VO Report Pack completed. The comparison, commercial evidence, audit status, approval, and generated PDF are recorded in the run ledger.';
-      onEvent({ kind: 'assistant_text', text: message });
-      await tracker.completeRun(runId, 'completed', message);
-      return message;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      onEvent({ kind: 'error', message });
-      await tracker.completeRun(runId, 'failed', message);
-      return message;
-    }
-  }
-
   async send(userText: string, onEvent: (event: AgentEvent) => void): Promise<string> {
     const userMsg: OpenAIMessage = { role: 'user', content: userText };
     this.messages.push(userMsg);
@@ -699,10 +669,19 @@ export class AgentSession {
       return directReply;
     }
 
+    const gatedReply = localWorkspaceGateReply(userText, this.ctx);
+    if (gatedReply) {
+      const assistantMsg: OpenAIMessage = { role: 'assistant', content: gatedReply };
+      this.messages.push(assistantMsg);
+      this.onPersistMessage?.(assistantMsg);
+      onEvent({ kind: 'assistant_text', text: gatedReply });
+      return gatedReply;
+    }
+
     const controller = new AbortController();
     this.activeController = controller;
     const tracker = this.executionTracker;
-    const runId = await tracker?.startRun({ request: userText, roleId: this.activeRoleId }) ?? null;
+    const runId = await tracker?.startRun({ request: userText, roleId: null }) ?? null;
 
     const MAX_HOPS = 10;
     const seenCallKeys = new Set<string>();
@@ -711,6 +690,8 @@ export class AgentSession {
     let ledgerStep = 0;
     let consecutiveEmptyHops = 0;
     let turnId: string | null = null;
+    const unresolvedGroundedLookups = new Set<string>();
+    let blockedReply: string | null = null;
 
     for (let hop = 0; hop < MAX_HOPS; hop++) {
       const isLastHop = hop === MAX_HOPS - 1;
@@ -729,10 +710,12 @@ export class AgentSession {
           dynamicContext: buildDynamicContext(this.ctx) + sessionContext,
           availableTools: routedTools,
           routingHint,
-          roleOverlay: buildRoleOverlay(this.activeRoleId),
           turnId,
           signal: controller.signal,
-          onTextDelta: (text) => onEvent({ kind: 'assistant_delta', text }),
+          onTextDelta:
+            blockedReply || unresolvedGroundedLookups.size > 0
+              ? undefined
+              : (text) => onEvent({ kind: 'assistant_delta', text }),
         });
       } catch (err) {
         if (controller.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
@@ -752,7 +735,7 @@ export class AgentSession {
       turnId = proxyResult.turn_id ?? turnId;
       onEvent({ kind: 'credits', balance: proxyResult.credits_balance });
 
-      const assistantMsg = extractAssistantMessage(proxyResult.response);
+      let assistantMsg = extractAssistantMessage(proxyResult.response);
       if (!assistantMsg) {
         onEvent({ kind: 'error', message: 'Empty model response.' });
         if (runId) await tracker?.completeRun(runId, 'failed', 'Empty model response.');
@@ -760,11 +743,17 @@ export class AgentSession {
         return '';
       }
 
+      let rawText = typeof assistantMsg.content === 'string' ? assistantMsg.content : '';
+      const toolCalls = assistantMsg.tool_calls ?? [];
+
+      if (rawText && toolCalls.length === 0) {
+        if (blockedReply) rawText = blockedReply;
+        else if (unresolvedGroundedLookups.size > 0) rawText = unverifiedLookupReply(userText);
+        assistantMsg = { ...assistantMsg, content: rawText };
+      }
+
       this.messages.push(assistantMsg);
       this.onPersistMessage?.(assistantMsg);
-
-      const rawText = typeof assistantMsg.content === 'string' ? assistantMsg.content : '';
-      const toolCalls = assistantMsg.tool_calls ?? [];
 
       // Final answer: text with no tool calls
       if (rawText && toolCalls.length === 0) {
@@ -818,7 +807,12 @@ export class AgentSession {
         let result: unknown;
 
         const callKey = `${name}::${argsJson}`;
-        if (seenCallKeys.has(callKey)) {
+        if (prerequisiteFailed) {
+          result = {
+            error:
+              'SKIPPED_AFTER_PREREQUISITE_FAILURE: An earlier tool in this turn requires user action first. No additional tools were executed.',
+          };
+        } else if (seenCallKeys.has(callKey)) {
           result = {
             error:
               'DUPLICATE_TOOL_CALL: this exact tool was already invoked with the same arguments in this turn. STOP calling tools and reply in plain text now.',
@@ -842,7 +836,7 @@ export class AgentSession {
           }
           if (mayExecute) {
             try {
-              result = await executeAgentTool(name, executableArgs(args), this.ctx);
+              result = await executeAgentTool(name, args, this.ctx);
             } catch (err) {
               result = { error: err instanceof Error ? err.message : String(err) };
             }
@@ -850,6 +844,12 @@ export class AgentSession {
         }
 
         this.contextManager.recordToolResult(name, result);
+
+        const groundedResult = groundedLookupHasEvidence(name, result);
+        if (groundedResult !== null) {
+          if (groundedResult) unresolvedGroundedLookups.delete(name);
+          else unresolvedGroundedLookups.add(name);
+        }
 
         if (result && typeof result === 'object' && 'error' in result) {
           const errStr = String((result as Record<string, unknown>).error ?? '');
@@ -859,6 +859,9 @@ export class AgentSession {
             || errStr.includes('APPROVAL_UNAVAILABLE')
           ) {
             prerequisiteFailed = true;
+          }
+          if (errStr.includes('PREREQUISITE_NOT_MET') && !blockedReply) {
+            blockedReply = prerequisiteReply(errStr, userText);
           }
         }
 

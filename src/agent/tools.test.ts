@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { VoComparisonResults } from '../BimEngine';
-import { executeAgentTool, getAvailableTools, type ToolContext } from './tools';
+import { buildToolRoutingHint, executeAgentTool, getAvailableTools, type ToolContext } from './tools';
 
 vi.mock('../lib/supabase', () => ({
   supabase: { from: vi.fn() },
+}));
+
+vi.mock('../ocr/ocr-engine', () => ({
+  runOcr: vi.fn(),
+  extractBqFromOcrText: vi.fn(() => []),
 }));
 
 function comparisonResult(): VoComparisonResults {
@@ -33,6 +38,56 @@ function toolContext(runCompare: ToolContext['runCompare']): ToolContext {
 }
 
 describe('Agent comparison tool routing', () => {
+  it('tells the agent to read an attached document before answering from it', () => {
+    const ctx = {
+      ...toolContext(vi.fn()),
+      ocrFile: { name: 'claim-backup.pdf' } as File,
+    };
+
+    expect(buildToolRoutingHint(ctx)).toContain('claim-backup.pdf');
+    expect(buildToolRoutingHint(ctx)).toContain('call ocr_document before answering');
+  });
+
+  it('reports when extracted document text is omitted from the model context', async () => {
+    const { runOcr } = await import('../ocr/ocr-engine');
+    vi.mocked(runOcr).mockResolvedValue({
+      text: 'x'.repeat(12001),
+      confidence: 100,
+      lines: [],
+      elapsed: 1,
+      pageCount: 1,
+      processedPages: 1,
+      truncated: false,
+      sourceType: 'pdf-text',
+    });
+    const ctx = {
+      ...toolContext(vi.fn()),
+      ocrFile: { name: 'large-bq.pdf' } as File,
+    };
+
+    const result = await executeAgentTool('ocr_document', {}, ctx);
+
+    expect(result).toEqual(expect.objectContaining({
+      characterCount: 12001,
+      textTruncated: true,
+      instructions: expect.stringContaining('Do not claim conclusions about omitted content.'),
+    }));
+  });
+
+  it('does not present an unloaded model as an IFC query with zero matches', async () => {
+    const ctx = {
+      ...toolContext(vi.fn()),
+      baseComponents: [],
+    };
+
+    const result = await executeAgentTool('query_ifc', { model: 'base', typeFilter: 'IfcWall' }, ctx);
+
+    expect(result).toEqual(expect.objectContaining({
+      error: expect.stringContaining('PREREQUISITE_NOT_MET'),
+    }));
+    expect(JSON.stringify(result)).not.toContain('"matched":0');
+  });
+
   it('makes dependent tools available immediately after a comparison', async () => {
     const results = comparisonResult();
     const ctx = toolContext(vi.fn().mockResolvedValue(results));

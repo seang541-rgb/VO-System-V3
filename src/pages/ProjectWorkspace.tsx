@@ -103,6 +103,7 @@ export default function ProjectWorkspace() {
   const [bqItems, setBqItems] = useState<BqLineItem[]>(DEFAULT_TEST_BQ_ITEMS);
   const [bqFileName, setBqFileName] = useState('Built-in Test BQ Library');
   const [bqError, setBqError] = useState('');
+  const [ocrFile, setOcrFile] = useState<File | null>(null);
   const [mappingError, setMappingError] = useState('');
   const [labelMappings, setLabelMappings] = useState<Record<string, string>>(() => {
     if (typeof window === 'undefined') return {};
@@ -1102,6 +1103,7 @@ export default function ProjectWorkspace() {
     voResults,
     bqItems,
     bqContext: buildBqMappingContext(bqItems, labelMappings),
+    ocrFile,
     baseFileName: v1File?.name ?? null,
     revisionFileName: v2File?.name ?? null,
     runCompare: runCompareForAgent,
@@ -1115,7 +1117,7 @@ export default function ProjectWorkspace() {
       return handle;
     },
     activeIfcSlot,
-  }), [v1Components, v2Components, voResults, bqItems, labelMappings, v1File, v2File, runCompareForAgent, projectId, activeIfcSlot]);
+  }), [v1Components, v2Components, voResults, bqItems, labelMappings, ocrFile, v1File, v2File, runCompareForAgent, projectId, activeIfcSlot]);
 
   const canCompareForPanel = v1State === 'ready' && v2State === 'ready' && !isRunning;
   const canAuditForPanel = (v1State === 'ready' || v2State === 'ready') && auditState !== 'running';
@@ -1290,6 +1292,7 @@ export default function ProjectWorkspace() {
                       projectId={projectId}
                       userId={user?.id}
                       onCreditsUpdate={(balance) => setCreditsBalance(balance)}
+                      onDocumentSelected={setOcrFile}
                     />
                   </div>
                 </div>

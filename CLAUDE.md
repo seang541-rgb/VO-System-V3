@@ -1,9 +1,9 @@
-# VO System V3 — IFC VO Copilot with AI Agent
+# VO System V3 — VO Copilot with AI Agent
 
 ## Project Overview
 IFC-based Variation Order (VO) comparison and quantity takeoff SaaS platform with embedded AI agent.
 Targeted at Malaysian construction industry — JKR/SMM2 classification standards.
-Core value: (A) instant audit/quantity takeoff, (B) VO comparison with AI copilot agent.
+Core value: (A) instant audit/quantity takeoff, (B) VO comparison with an evidence-grounded AI copilot, (C) PDF/scanned document reading for QS workflows.
 
 ## Tech Stack
 - **Frontend**: React 19 + TypeScript 5.8 + Tailwind CSS 4 + Vite 6
@@ -11,8 +11,8 @@ Core value: (A) instant audit/quantity takeoff, (B) VO comparison with AI copilo
 - **Payments**: Stripe (credit-based billing)
 - **IFC Parsing**: web-ifc (client-side, no server upload)
 - **3D Viewer**: Three.js + web-ifc-three
-- **AI Agent**: NVIDIA NIM (OpenAI-compatible, ReAct pattern)
-- **OCR**: Tesseract.js (agent perception layer for scanned BQ/contracts)
+- **AI Agent**: DeepSeek V4 Pro through NVIDIA NIM (OpenAI-compatible, ReAct pattern)
+- **Document Reading**: PDF.js text/page rendering + Tesseract.js OCR fallback for scanned BQ/contracts
 - **Export**: xlsx (Excel), jspdf + jspdf-autotable (PDF)
 - **i18n**: react-i18next (zh/en/ms)
 - **Routing**: React Router v7
@@ -44,7 +44,6 @@ src/
   qs-config.ts          # QS measurement configuration
   qs-project-config.ts  # Project-level QS overrides
   ifc-step-fallback.ts  # STEP fallback parser
-  constants.ts          # BIM translations, material maps
   lib/
     format.ts           # ActiveTab type, formatting utilities
     supabase.ts         # Supabase client singleton
@@ -63,21 +62,19 @@ src/
     storey.ts           # Storey detection
     summarize.ts        # Audit result summarization
   agent/
-    agent-client.ts     # ReAct AI agent (NVIDIA NIM, OpenAI-compatible)
+    agent-client.ts     # ReAct AI agent (DeepSeek V4 Pro via NVIDIA NIM)
     tools.ts            # Agent tool definitions + dependency router
     kb-lookups.ts       # Knowledge base lookups (Supabase)
     context-manager.ts  # Session context tracking across tool hops
-    roles.ts            # Multi-role system (QS, Contract, Compliance, Reporter)
     proactive-discovery.ts  # Workspace analysis → suggestion engine
   ocr/
-    ocr-engine.ts       # Tesseract.js OCR with BQ extraction
+    ocr-engine.ts       # PDF text extraction / OCR with BQ extraction
   report/
     pdf-generator.ts    # jsPDF VO substantiation report
   components/
     AppHeader.tsx        # Top nav bar (logo + credits + plan + i18n + sign out)
     AppSidebar.tsx       # Left sidebar (V1 workspace, file upload, actions)
     GlobalSidebar.tsx    # Left sidebar navigation (V2, route-aware)
-    ProjectSidebar.tsx   # Project workspace sidebar
     AuditPanel.tsx       # Audit report: idle/running/done/error states
     AuthGuard.tsx        # Login gate
     BQMappingPanel.tsx   # BQ mapping and valuation panel
@@ -89,9 +86,7 @@ src/
     LanguageSwitcher.tsx # i18n language selector
     ModelViewer.tsx      # Three.js 3D model viewer
     PlanBadge.tsx        # Coloured plan label (free/pro/enterprise)
-    ProjectCard.tsx      # Project card for dashboard
     ResultsTable.tsx     # VO comparison results table
-    UpgradePrompt.tsx    # Modal shown when plan limit is reached
   layouts/
     AppLayout.tsx        # Authenticated shell (header + sidebar + outlet)
   pages/
@@ -107,10 +102,8 @@ src/
     useVOHistory.ts      # VO comparison history hook
     useSubscription.ts   # User subscription + plan hook
     useCopilotHistory.ts # Chat message persistence per conversation
-    useCopilotConversations.ts  # Conversation CRUD
+    useCopilotConversations.ts  # Conversation creation for message persistence
     useCopilotMemory.ts  # Cross-session memory with RAG search
-    useAnalysisResults.ts # Analysis result storage
-    useFileVersions.ts   # File version management
     useWebhooks.ts       # Webhook CRUD + dispatch
     useApiKeys.ts        # API key generation + revocation
   locales/
@@ -122,7 +115,7 @@ supabase/
   seed/                  # Knowledge base seed data (agent KB)
   sql/                   # Database migration scripts (all preserved)
   functions/
-    agent-proxy/         # NVIDIA NIM agent proxy
+    agent-proxy/         # DeepSeek V4 Pro / NVIDIA NIM agent proxy
     create-checkout/     # Stripe one-time payment checkout session
     stripe-webhook/      # Stripe webhook handler
     embed-bq/            # BQ embedding generation (pgvector)

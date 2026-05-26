@@ -366,7 +366,7 @@ export const AGENT_TOOL_SCHEMAS: AnthropicToolSchema[] = [
   {
     name: 'ocr_document',
     description:
-      'Run OCR on an uploaded image (scan of BQ schedule, contract page, drawing markup, etc.) to extract text. Supports English and Chinese. Returns extracted text, line-by-line breakdown with confidence scores, and auto-detected BQ line items if present. The user must first upload the image — use the file from the workspace.',
+      'Read an uploaded evidence document (PDF or scanned image of a BQ schedule, contract page, drawing markup, etc.). Searchable PDF pages are extracted directly; scanned pages use OCR. Returns text, line-by-line breakdown with confidence scores, and auto-detected BQ line items if present. Always call this tool before making claims about an uploaded document.',
     input_schema: {
       type: 'object',
       properties: {
@@ -441,8 +441,13 @@ export function buildToolRoutingHint(ctx: ToolContext): string {
       blocked.push(`${meta.name} (needs: ${missing.join(', ')})`);
     }
   }
-  if (blocked.length === 0) return '\n\nAll tools are available.';
-  return `\n\n--- TOOL AVAILABILITY ---\nBlocked tools (prerequisites not met): ${blocked.join('; ')}.\nDo NOT call blocked tools — tell the user what action is needed instead.`;
+  const availability = blocked.length === 0
+    ? '\n\nAll tools are available.'
+    : `\n\n--- TOOL AVAILABILITY ---\nBlocked tools (prerequisites not met): ${blocked.join('; ')}.\nDo NOT call blocked tools — tell the user what action is needed instead.`;
+  const documentHint = ctx.ocrFile
+    ? `\nUploaded evidence document available: "${ctx.ocrFile.name}". When the user asks about this document, call ocr_document before answering and rely only on extracted content.`
+    : '';
+  return `${availability}${documentHint}`;
 }
 
 // OpenAI-compatible tool definitions (used by NVIDIA NIM, OpenAI, and most OSS models)
@@ -519,6 +524,12 @@ export async function executeAgentTool(
       const limit = Math.max(1, Math.min(100, Math.floor(rawLimit)));
 
       const pool = pickModel(ctx, which);
+      if (pool.length === 0) {
+        return {
+          error:
+            `PREREQUISITE_NOT_MET: There are no queryable components available in the "${which}" IFC slot. STOP calling tools. Tell the user to load or re-load the ${which} IFC model before asking questions about its contents. Do NOT report that the model contains zero matching elements, because no model evidence is available.`,
+        };
+      }
       const filtered = pool.filter((c) => {
         if (typeFilter && !(c.type ?? '').toLowerCase().includes(typeFilter)) return false;
         if (labelFilter && !(c.qsLabel ?? '').toLowerCase().includes(labelFilter)) return false;
@@ -711,7 +722,7 @@ export async function executeAgentTool(
       const part = typeof input.part === 'string' ? input.part : undefined;
       const limit = typeof input.limit === 'number' ? Math.max(1, Math.min(20, Math.floor(input.limit))) : 5;
 
-      const INSTRUCTIONS = 'CRITICAL: Each match has a `citation`, a `title`, and the user-facing scenario it applies to. READ THE TITLE before picking — multiple by-laws / standards often share keywords (e.g. ceiling height has separate by-laws for habitable rooms, shops, kitchens, bathrooms; rebar standards differ by grade). NEVER cite a row unless its title specifically matches the user\'s scenario. In your reply, quote the `citation` verbatim (e.g. "UBBL Part V, By-Law 23"). If two or more matches could fit, list each with its citation and value, then ask the user which scenario they mean.';
+      const INSTRUCTIONS = 'CRITICAL: Each match has a `citation`, a `title`, and the user-facing scenario it applies to. READ THE TITLE before picking — multiple by-laws / standards often share keywords (e.g. ceiling height has separate by-laws for habitable rooms, shops, kitchens, bathrooms; rebar standards differ by grade). NEVER cite a row unless its title specifically matches the user\'s scenario. If no matches are returned, state that no verified record was found and DO NOT provide a citation or value from general knowledge. In your reply, quote the `citation` verbatim only for a matching returned row. If two or more matches could fit, list each with its citation and value, then ask the user which scenario they mean.';
 
       try {
         if (source === 'ubbl') {
@@ -775,7 +786,7 @@ export async function executeAgentTool(
           query: query ?? null,
           count: rows.length,
           instructions:
-            'CRITICAL: Quote the `citation` field (e.g. "SMM2 Section F" or "NRM Section 2") in your reply. SMM2 letters and NRM numbers are not interchangeable — never mix them up.',
+            'CRITICAL: Quote the `citation` field (e.g. "SMM2 Section F" or "NRM Section 2") only for a matching returned row. If no matches are returned, state that no verified record was found and DO NOT supply a code or conclusion from general knowledge. SMM2 letters and NRM numbers are not interchangeable — never mix them up.',
           matches: rows.map(formatMeasurementForLLM),
         };
       } catch (err) {
@@ -913,7 +924,7 @@ export async function executeAgentTool(
     case 'ocr_document': {
       if (!ctx.ocrFile) {
         return {
-          error: 'PREREQUISITE_NOT_MET: No image file available for OCR. STOP calling tools. Ask the user to upload an image (JPG, PNG, or PDF scan) via the workspace file panel.',
+          error: 'PREREQUISITE_NOT_MET: No evidence document is available for reading. STOP calling tools. Ask the user to upload a PDF or scanned image (JPG, PNG, or WEBP) in VO Copilot.',
         };
       }
       try {
@@ -921,12 +932,30 @@ export async function executeAgentTool(
         const extractBq = input.extractBq !== false;
         const { runOcr, extractBqFromOcrText } = await import('../ocr/ocr-engine');
         const result = await runOcr(ctx.ocrFile, lang);
+        const maxTextCharacters = 12000;
+        const textTruncated = result.text.length > maxTextCharacters;
+        const limitations: string[] = [];
+        if (result.truncated) {
+          limitations.push(`Only the first ${result.processedPages} of ${result.pageCount} pages were processed.`);
+        }
+        if (textTruncated) {
+          limitations.push(`Only the first ${maxTextCharacters} of ${result.text.length} extracted characters are included in this tool result.`);
+        }
         const response: Record<string, unknown> = {
-          text: result.text.slice(0, 3000),
+          text: result.text.slice(0, maxTextCharacters),
           confidence: result.confidence,
           lineCount: result.lines.length,
           topLines: result.lines.slice(0, 20).map((l) => ({ text: l.text, confidence: l.confidence })),
           elapsed: `${(result.elapsed / 1000).toFixed(1)}s`,
+          sourceType: result.sourceType,
+          pageCount: result.pageCount,
+          processedPages: result.processedPages,
+          truncated: result.truncated,
+          characterCount: result.text.length,
+          textTruncated,
+          instructions: limitations.length > 0
+            ? `${limitations.join(' ')} Do not claim conclusions about omitted content.`
+            : 'The full uploaded document was processed.',
         };
         if (extractBq) {
           const bqItems = extractBqFromOcrText(result.text);

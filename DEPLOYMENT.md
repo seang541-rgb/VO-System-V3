@@ -42,17 +42,17 @@ The Agent run ledger records each cloud Copilot request and its tool steps.
 before the Agent is allowed to create a formal downloadable output. Ledger
 writes and approval transitions are handled by the authenticated
 `agent-ledger` Edge Function; the browser has read-only access to these rows.
-The `VO Pack` workflow runs comparison, commercial summary, optional active
-model audit, and an approved PDF output as one durable run. An approved output
-is only marked consumed after generation succeeds, so interrupted runs can
-resume without silently losing their approval.
+When Copilot requests a formal output, an approved output is only marked
+consumed after generation succeeds, so interrupted runs can resume without
+silently losing their approval.
 
 ## Edge Functions
 
 Deploy these functions:
 
-- `agent-proxy`: authenticated Copilot proxy. One credit is consumed per user
-  turn; tool continuation hops reuse the recorded turn, with a ten-hop cap.
+- `agent-proxy`: authenticated DeepSeek V4 Pro proxy through NVIDIA NIM. One
+  credit is consumed per user turn; tool continuation hops reuse the recorded
+  turn, with a ten-hop cap.
 - `agent-ledger`: authenticated append-only run/evidence ledger and resumable
   approval state machine for formal outputs.
 - `create-checkout`: Stripe checkout for credit top-ups.

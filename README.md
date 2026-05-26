@@ -9,6 +9,7 @@ A lightweight IFC-based VO comparison MVP that can:
 - generate a JKR / SMM2 style Excel workbook with `VO Cover Sheet`, `Summary`, `Star Rate Register`, and `VO Substantiation` sheets
 - group output by `Section`, `Level`, `Block`, `Zone`, and `Grid/Room`
 - surface `Host / Opening Link` and `Shield` columns in both UI and Excel output
+- read uploaded PDF or scanned-image evidence in VO Copilot, with PDF text extraction and OCR fallback
 - run the same comparison from the command line for smoke tests
 
 ## Run The UI
@@ -29,6 +30,10 @@ The local IFC workspace and Excel export run without cloud configuration. To
 enable sign-in, persisted projects, credits, webhooks, API keys, and Copilot,
 copy `.env.example` to `.env.local` and set your Supabase publishable key.
 After cloud configuration, `/local` remains available for local-only IFC work.
+
+In a cloud project, `VO Copilot` accepts an IFC model or an attached PDF /
+scanned image. Searchable PDF pages are extracted directly; scanned pages are
+processed with OCR. Document-based answers are grounded on extracted content.
 
 The `VO Cover Sheet` now carries formal header fields such as `Contract`, `Employer`, `Consultant / S.O.`, `VO Reference`, `Revision Reference`, `Prepared By`, and the uploaded `Base / Revision` IFC filenames.
 
