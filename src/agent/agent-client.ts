@@ -72,6 +72,11 @@ You help the user by:
 - Assessing whether a VO qualifies as a claim under a specific contract clause (analyze_contract_clause).
 - Driving the Excel export when the user asks for it.
 
+Interaction gate (HIGHEST PRIORITY):
+- Greetings, thanks, casual conversation, and questions about your capabilities require NO tool calls. Reply directly.
+- Only inspect IFC data when the user's CURRENT message explicitly asks about model contents, comparison, audit, VO quantities, or report generation.
+- Do not repeat or infer a tool task from earlier conversation history when the current message does not request it.
+
 Agentic workflow (ReAct pattern — FOLLOW THIS):
 You operate in a Think → Act → Observe loop. For each user request:
 1. **Think**: Analyze the request, break it into sub-tasks, and state your plan briefly. For multi-step tasks, list the steps you'll take (e.g. "I'll: ① compare IFC files ② summarize commercial impact ③ check contract clause ④ generate report").
@@ -205,6 +210,26 @@ function parseMemoryExtracts(text: string): { cleanText: string; memories: Extra
   }
 
   return { cleanText, memories };
+}
+
+function directConversationReply(userText: string): string | null {
+  const normalized = userText
+    .trim()
+    .toLowerCase()
+    .replace(/[.!?,;:，。！？；：]+$/u, '')
+    .trim();
+
+  if (/^(hi|hello|hey|hello there|你好|嗨|哈喽|您好)$/u.test(normalized)) {
+    return /[\u4e00-\u9fff]/u.test(normalized)
+      ? '你好。你可以让我检查 IFC、分析 VO 或准备报告。'
+      : 'Hello. I can help inspect IFC data, analyze a VO, or prepare a report.';
+  }
+
+  if (/^(thanks|thank you|thx|谢谢|多谢)$/u.test(normalized)) {
+    return /[\u4e00-\u9fff]/u.test(normalized) ? '不客气。' : 'You are welcome.';
+  }
+
+  return null;
 }
 
 // ── Proxy call ────────────────────────────────────────────────────────────────
@@ -544,11 +569,21 @@ export class AgentSession {
   }
 
   async send(userText: string, onEvent: (event: AgentEvent) => void): Promise<string> {
-    const tracker = this.executionTracker;
-    const runId = await tracker?.startRun({ request: userText, roleId: this.activeRoleId }) ?? null;
     const userMsg: OpenAIMessage = { role: 'user', content: userText };
     this.messages.push(userMsg);
     this.onPersistMessage?.(userMsg);
+
+    const directReply = directConversationReply(userText);
+    if (directReply) {
+      const assistantMsg: OpenAIMessage = { role: 'assistant', content: directReply };
+      this.messages.push(assistantMsg);
+      this.onPersistMessage?.(assistantMsg);
+      onEvent({ kind: 'assistant_text', text: directReply });
+      return directReply;
+    }
+
+    const tracker = this.executionTracker;
+    const runId = await tracker?.startRun({ request: userText, roleId: this.activeRoleId }) ?? null;
 
     const MAX_HOPS = 10;
     const seenCallKeys = new Set<string>();

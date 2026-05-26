@@ -140,4 +140,19 @@ describe('Agent formal output approvals', () => {
     expect(tracker.consumeApproval).toHaveBeenCalledWith('run-1', 'generate_report');
     expect(tracker.completeRun).toHaveBeenCalledWith('run-1', 'completed', result);
   });
+
+  it('answers a greeting locally without charging a model turn or calling tools', async () => {
+    const tracker = buildTracker();
+    const session = new AgentSession(emptyToolContext());
+    const onEvent = vi.fn();
+    session.setExecutionTracker(tracker);
+
+    const result = await session.send('hi', onEvent);
+
+    expect(result).toContain('Hello');
+    expect(tracker.startRun).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(executeAgentTool).not.toHaveBeenCalled();
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ kind: 'assistant_text' }));
+  });
 });
