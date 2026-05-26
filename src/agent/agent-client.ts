@@ -58,6 +58,7 @@ export interface AgentExecutionTracker {
     evidence: { type: AgentEvidenceType; title: string; payload: unknown },
   ) => Promise<void>;
   requestApproval: (runId: string, actionType: string, payload: Record<string, unknown>) => Promise<boolean>;
+  consumeApproval: (runId: string, actionType: string) => Promise<void>;
 }
 
 // ── System prompt ─────────────────────────────────────────────────────────────
@@ -275,6 +276,17 @@ function extractAssistantMessage(response: unknown): OpenAIMessage | null {
 // ── AgentSession ──────────────────────────────────────────────────────────────
 
 const APPROVAL_GATED_TOOLS = new Set(['export_vo_excel', 'generate_report']);
+const AUTONOMOUS_WORKFLOW_FLAG = '__autonomousWorkflow';
+
+function toolError(result: unknown): string | null {
+  if (!result || typeof result !== 'object' || !('error' in result)) return null;
+  return String((result as Record<string, unknown>).error ?? 'Tool failed.');
+}
+
+function executableArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const { [AUTONOMOUS_WORKFLOW_FLAG]: _workflowFlag, ...cleanArgs } = args;
+  return cleanArgs;
+}
 
 function evidenceForTool(name: string, result: unknown): { type: AgentEvidenceType; title: string; payload: unknown } | null {
   if (!result || typeof result !== 'object' || 'error' in result) return null;
@@ -358,6 +370,18 @@ export class AgentSession {
     return this.messages;
   }
 
+  private async consumeAutonomousOutputCredit(onEvent: (event: AgentEvent) => void): Promise<void> {
+    const { data, error } = await supabase.rpc('consume_credit');
+    if (error) {
+      const message = error.message?.includes('NO_CREDITS')
+        ? 'No report credits remain. Top up before generating the formal output.'
+        : error.message;
+      throw new Error(message || 'Unable to validate report credit balance.');
+    }
+    const balance = data && typeof data.credits_balance === 'number' ? data.credits_balance : null;
+    onEvent({ kind: 'credits', balance });
+  }
+
   async resumeApprovedAction(
     runId: string,
     name: string,
@@ -369,11 +393,15 @@ export class AgentSession {
       throw new Error('This approved action cannot be resumed.');
     }
 
-    onEvent({ kind: 'tool_start', name, input: args });
+    const isAutonomousWorkflow = args[AUTONOMOUS_WORKFLOW_FLAG] === true;
+    const cleanArgs = executableArgs(args);
+    if (isAutonomousWorkflow) await this.consumeAutonomousOutputCredit(onEvent);
+
+    onEvent({ kind: 'tool_start', name, input: cleanArgs });
     const started = performance.now();
     let result: unknown;
     try {
-      result = await executeAgentTool(name, args, this.ctx);
+      result = await executeAgentTool(name, cleanArgs, this.ctx);
     } catch (error) {
       result = { error: error instanceof Error ? error.message : String(error) };
     }
@@ -389,7 +417,7 @@ export class AgentSession {
       stepType: 'tool',
       toolName: name,
       status: errorText ? 'failed' : 'completed',
-      input: args,
+      input: cleanArgs,
       output: result,
       durationMs,
     });
@@ -402,10 +430,117 @@ export class AgentSession {
       return errorText;
     }
 
+    await tracker.consumeApproval(runId, name);
     const message = `${name} completed after recorded approval.`;
     onEvent({ kind: 'assistant_text', text: message });
     await tracker.completeRun(runId, 'completed', message);
     return message;
+  }
+
+  async runVoReportWorkflow(onEvent: (event: AgentEvent) => void): Promise<string> {
+    const tracker = this.executionTracker;
+    if (!tracker) {
+      throw new Error('Autonomous workflows require a signed-in project with an auditable run ledger.');
+    }
+    const runId = await tracker.startRun({
+      request: 'Autonomous VO Report Pack: compare models, summarize impact, audit available model, and prepare PDF.',
+      roleId: 'workflow:vo-report-pack',
+    });
+    if (!runId) throw new Error('Unable to create the workflow run.');
+
+    let sequenceNo = 0;
+    const trackedTool = async (
+      name: string,
+      args: Record<string, unknown>,
+      required: boolean,
+    ): Promise<unknown> => {
+      onEvent({ kind: 'tool_start', name, input: args });
+      const started = performance.now();
+      let result: unknown;
+      try {
+        result = await executeAgentTool(name, args, this.ctx);
+      } catch (error) {
+        result = { error: error instanceof Error ? error.message : String(error) };
+      }
+      const durationMs = Math.round(performance.now() - started);
+      onEvent({ kind: 'tool_end', name, result, durationMs });
+      this.contextManager.recordToolResult(name, result);
+      const errorText = toolError(result);
+      const stepId = await tracker.recordStep(runId, {
+        sequenceNo: ++sequenceNo,
+        stepType: 'tool',
+        toolName: name,
+        status: errorText ? 'failed' : 'completed',
+        input: args,
+        output: result,
+        durationMs,
+      });
+      const evidence = evidenceForTool(name, result);
+      if (evidence) await tracker.recordEvidence(runId, stepId, evidence);
+      if (required && errorText) throw new Error(errorText);
+      return result;
+    };
+
+    try {
+      onEvent({
+        kind: 'thinking',
+        text: 'Starting VO Report Pack: comparison, commercial summary, available-model audit, then approval for the formal PDF.',
+        step: 1,
+        totalSteps: 4,
+      });
+      await trackedTool('compare_ifc', {}, true);
+      await trackedTool('summarize_commercial_impact', { topN: 10 }, true);
+
+      if (this.ctx.getActiveIfcHandle?.()) {
+        await trackedTool('audit_ifc', { model: this.ctx.activeIfcSlot ?? 'base', topN: 10 }, false);
+      } else {
+        const skipMessage = 'Model audit skipped because no active 3D model handle is available; the comparison and commercial evidence remain valid.';
+        onEvent({ kind: 'thinking', text: skipMessage, step: 3, totalSteps: 4 });
+        await tracker.recordStep(runId, {
+          sequenceNo: ++sequenceNo,
+          stepType: 'system',
+          toolName: 'audit_ifc',
+          status: 'completed',
+          output: { skipped: true, reason: skipMessage },
+        });
+      }
+
+      onEvent({
+        kind: 'thinking',
+        text: 'Evidence collection is complete. Waiting for approval before generating the formal PDF report.',
+        step: 4,
+        totalSteps: 4,
+      });
+      const reportArgs = { [AUTONOMOUS_WORKFLOW_FLAG]: true };
+      const approved = await tracker.requestApproval(runId, 'generate_report', reportArgs);
+      if (!approved) {
+        const message = 'VO Report Pack stopped because formal output approval was rejected.';
+        await tracker.recordStep(runId, {
+          sequenceNo: ++sequenceNo,
+          stepType: 'tool',
+          toolName: 'generate_report',
+          status: 'rejected',
+          input: {},
+          output: { error: 'APPROVAL_REJECTED' },
+        });
+        await tracker.completeRun(runId, 'cancelled', message);
+        onEvent({ kind: 'assistant_text', text: message });
+        return message;
+      }
+
+      await this.consumeAutonomousOutputCredit(onEvent);
+      await trackedTool('generate_report', {}, true);
+      await tracker.consumeApproval(runId, 'generate_report');
+      const message = 'VO Report Pack completed. The comparison, commercial evidence, audit status, approval, and generated PDF are recorded in the run ledger.';
+      onEvent({ kind: 'assistant_text', text: message });
+      await tracker.completeRun(runId, 'completed', message);
+      return message;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      onEvent({ kind: 'error', message });
+      await tracker.completeRun(runId, 'failed', message);
+      return message;
+    }
   }
 
   async send(userText: string, onEvent: (event: AgentEvent) => void): Promise<string> {
@@ -540,7 +675,7 @@ export class AgentSession {
           }
           if (mayExecute) {
             try {
-              result = await executeAgentTool(name, args, this.ctx);
+              result = await executeAgentTool(name, executableArgs(args), this.ctx);
             } catch (err) {
               result = { error: err instanceof Error ? err.message : String(err) };
             }
@@ -587,6 +722,9 @@ export class AgentSession {
           }) ?? null;
           const evidence = evidenceForTool(name, result);
           if (evidence) await tracker?.recordEvidence(runId, stepId, evidence);
+          if (!outputError && APPROVAL_GATED_TOOLS.has(name)) {
+            await tracker?.consumeApproval(runId, name);
+          }
         }
         const toolMsg: OpenAIMessage = {
           role: 'tool',

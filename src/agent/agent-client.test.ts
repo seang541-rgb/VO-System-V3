@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { supabase } from '../lib/supabase';
 import { AgentSession, type AgentExecutionTracker } from './agent-client';
 import { executeAgentTool, type ToolContext } from './tools';
 
@@ -9,6 +10,7 @@ vi.mock('../lib/supabase', () => ({
         data: { session: { access_token: 'test-token' } },
       }),
     },
+    rpc: vi.fn().mockResolvedValue({ data: { credits_balance: 3 }, error: null }),
   },
 }));
 
@@ -50,6 +52,7 @@ function buildTracker(): AgentExecutionTracker {
     recordStep: vi.fn().mockResolvedValue('step-1'),
     recordEvidence: vi.fn().mockResolvedValue(undefined),
     requestApproval: vi.fn().mockResolvedValue(false),
+    consumeApproval: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -110,6 +113,31 @@ describe('Agent formal output approvals', () => {
       'step-1',
       expect.objectContaining({ type: 'report' }),
     );
+    expect(tracker.completeRun).toHaveBeenCalledWith('run-1', 'completed', result);
+    expect(tracker.consumeApproval).toHaveBeenCalledWith('run-1', 'export_vo_excel');
+  });
+
+  it('runs the autonomous report pack through evidence, approval, billing, and formal output', async () => {
+    const tracker = buildTracker();
+    vi.mocked(tracker.requestApproval).mockResolvedValueOnce(true);
+    vi.mocked(executeAgentTool).mockResolvedValue({ ok: true });
+    const session = new AgentSession(emptyToolContext());
+    session.setExecutionTracker(tracker);
+
+    const result = await session.runVoReportWorkflow(vi.fn());
+
+    expect(vi.mocked(executeAgentTool).mock.calls.map(([name]) => name)).toEqual([
+      'compare_ifc',
+      'summarize_commercial_impact',
+      'generate_report',
+    ]);
+    expect(tracker.requestApproval).toHaveBeenCalledWith(
+      'run-1',
+      'generate_report',
+      { __autonomousWorkflow: true },
+    );
+    expect(supabase.rpc).toHaveBeenCalledWith('consume_credit');
+    expect(tracker.consumeApproval).toHaveBeenCalledWith('run-1', 'generate_report');
     expect(tracker.completeRun).toHaveBeenCalledWith('run-1', 'completed', result);
   });
 });

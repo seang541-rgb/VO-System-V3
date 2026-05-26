@@ -15,6 +15,7 @@ export interface PendingAgentApproval {
   runId: string;
   actionType: string;
   payload: Record<string, unknown>;
+  status: 'pending' | 'approved';
   recovered: boolean;
 }
 
@@ -65,10 +66,12 @@ export function useAgentRuns(projectId?: string, userId?: string, conversationId
         .limit(6),
       supabase
         .from('agent_approvals')
-        .select('id, run_id, action_type, action_payload')
+        .select('id, run_id, action_type, action_payload, status, agent_runs!inner(status)')
         .eq('project_id', projectId)
         .eq('user_id', userId)
-        .eq('status', 'pending')
+        .in('status', ['pending', 'approved'])
+        .in('agent_runs.status', ['running', 'waiting_approval'])
+        .is('claimed_at', null)
         .order('requested_at', { ascending: false })
         .limit(1)
         .maybeSingle(),
@@ -81,12 +84,14 @@ export function useAgentRuns(projectId?: string, userId?: string, conversationId
         run_id: string;
         action_type: string;
         action_payload: Record<string, unknown>;
+        status: 'pending' | 'approved';
       } | null;
       setPendingApproval(approval ? {
         id: approval.id,
         runId: approval.run_id,
         actionType: approval.action_type,
         payload: approval.action_payload,
+        status: approval.status,
         recovered: true,
       } : null);
     }
@@ -152,12 +157,21 @@ export function useAgentRuns(projectId?: string, userId?: string, conversationId
         runId,
         actionType,
         payload,
+        status: 'pending',
         recovered: false,
       });
       void refresh();
       return await new Promise<boolean>((resolve) => {
         resolverRef.current = { id: data.approvalId, resolve };
       });
+    },
+    consumeApproval: async (runId, actionType) => {
+      await invokeLedger({
+        operation: 'claim_approval',
+        runId,
+        actionType,
+      });
+      void refresh();
     },
   } : null, [conversationId, projectId, refresh, userId]);
 
@@ -166,11 +180,15 @@ export function useAgentRuns(projectId?: string, userId?: string, conversationId
     if (!approval) return null;
     const liveResolver = resolverRef.current?.id === approval.id ? resolverRef.current : null;
 
-    await invokeLedger({
-      operation: 'decide_approval',
-      approvalId: approval.id,
-      approved,
-    });
+    if (approval.status === 'pending') {
+      await invokeLedger({
+        operation: 'decide_approval',
+        approvalId: approval.id,
+        approved,
+      });
+    } else if (!approved) {
+      throw new Error('This formal output has already been approved and is ready to resume.');
+    }
 
     setPendingApproval(null);
     if (!approved) {
@@ -188,10 +206,6 @@ export function useAgentRuns(projectId?: string, userId?: string, conversationId
       return null;
     }
 
-    const claimed = await invokeLedger<ResumableApprovedAction>({
-      operation: 'claim_approval',
-      approvalId: approval.id,
-    });
     if (liveResolver) {
       resolverRef.current = null;
       liveResolver.resolve(true);
@@ -200,7 +214,11 @@ export function useAgentRuns(projectId?: string, userId?: string, conversationId
     }
 
     void refresh();
-    return claimed;
+    return {
+      runId: approval.runId,
+      actionType: approval.actionType,
+      payload: approval.payload,
+    };
   }, [pendingApproval, refresh, tracker]);
 
   return { runs, pendingApproval, tracker, decideApproval, refresh };

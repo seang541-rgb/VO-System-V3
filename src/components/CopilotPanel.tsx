@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles, Send, RefreshCw, Wrench, Loader2, Brain, Plus, MessageSquare, ChevronDown, UserCog, Lightbulb, X, ShieldCheck } from 'lucide-react';
+import { Sparkles, Send, RefreshCw, Wrench, Loader2, Brain, Plus, MessageSquare, ChevronDown, UserCog, Lightbulb, X, ShieldCheck, FileCheck2 } from 'lucide-react';
 import { AgentSession, type AgentEvent, type OpenAIMessage, type ExtractedMemory } from '../agent/agent-client';
 import type { ToolContext } from '../agent/tools';
 import { useCopilotHistory } from '../hooks/useCopilotHistory';
@@ -63,6 +63,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
   const revReady = toolContext.revisionComponents.length > 0;
   const compareReady = !!toolContext.voResults;
   const recoveredApprovalNeedsResult = Boolean(pendingApproval?.recovered && !compareReady);
+  const canRunVoPack = signedIn && !busy && !pendingApproval && (compareReady || (baseReady && revReady));
 
   // Proactive suggestions — recalculate when workspace state changes
   useEffect(() => {
@@ -249,6 +250,59 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
     }
   }, [decideApproval, pendingApproval, pushEntry, toolContext, tracker]);
 
+  const handleRunVoPack = useCallback(async () => {
+    if (!canRunVoPack) return;
+    if (!sessionRef.current) sessionRef.current = new AgentSession(toolContext);
+    else sessionRef.current.updateContext(toolContext);
+    sessionRef.current.setExecutionTracker(tracker);
+
+    if (!activeConvId && projectId) {
+      await createConv('Autonomous VO Report Pack');
+    }
+
+    pushEntry({ id: newId(), kind: 'user', text: 'Run Autonomous VO Report Pack' });
+    setBusy(true);
+    setActiveToolLabel(null);
+    setAgentStep(0);
+    try {
+      await sessionRef.current.runVoReportWorkflow((event) => {
+        switch (event.kind) {
+          case 'assistant_text':
+            pushEntry({ id: newId(), kind: 'assistant', text: event.text });
+            break;
+          case 'thinking':
+            setAgentStep(event.step);
+            pushEntry({ id: newId(), kind: 'thinking', text: event.text, meta: `Step ${event.step}/${event.totalSteps ?? '?'}` });
+            break;
+          case 'tool_start':
+            setActiveToolLabel(event.name);
+            pushEntry({ id: newId(), kind: 'tool', text: event.name, meta: 'Autonomous workflow' });
+            break;
+          case 'tool_end':
+            setActiveToolLabel(null);
+            pushEntry({
+              id: newId(),
+              kind: 'tool',
+              text: `${event.name} - ${event.durationMs}ms`,
+              meta: truncate(JSON.stringify(event.result), 400),
+            });
+            break;
+          case 'credits':
+            if (typeof event.balance === 'number' && onCreditsUpdate) onCreditsUpdate(event.balance);
+            break;
+          case 'error':
+            pushEntry({ id: newId(), kind: 'error', text: event.message });
+            break;
+        }
+      });
+    } catch (error) {
+      pushEntry({ id: newId(), kind: 'error', text: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setBusy(false);
+      setActiveToolLabel(null);
+    }
+  }, [activeConvId, canRunVoPack, createConv, onCreditsUpdate, projectId, pushEntry, toolContext, tracker]);
+
   const handleReset = () => {
     sessionRef.current?.reset();
     setEntries([]);
@@ -299,6 +353,16 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
             </div>
           </div>
           <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => void handleRunVoPack()}
+              disabled={!canRunVoPack}
+              title="Run Autonomous VO Report Pack"
+              className="inline-flex items-center gap-1 rounded-lg border border-blue-500/40 bg-blue-500/10 px-2 py-1.5 text-xs text-blue-300 hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+            >
+              <FileCheck2 className="h-3 w-3" />
+              VO Pack
+            </button>
             {/* Role selector */}
             <div className="relative">
               <button
@@ -421,6 +485,8 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
               <div className="mt-1 text-xs text-slate-400">
                 {recoveredApprovalNeedsResult
                   ? 'Loading the latest saved comparison before this approved output can resume.'
+                  : pendingApproval.status === 'approved'
+                    ? 'The formal output is approved and ready to resume execution.'
                   : pendingApproval.recovered
                   ? 'This interrupted task is waiting for your recorded decision. Approval resumes the output.'
                   : 'This creates a formal downloadable output. The decision is recorded in the run ledger.'}
@@ -432,16 +498,18 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
                   disabled={(pendingApproval.recovered && busy) || recoveredApprovalNeedsResult}
                   className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-50"
                 >
-                  Approve Output
+                  {pendingApproval.status === 'approved' ? 'Resume Output' : 'Approve Output'}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => void handleApprovalDecision(false)}
-                  disabled={pendingApproval.recovered && busy}
-                  className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-700 disabled:opacity-50"
-                >
-                  Reject
-                </button>
+                {pendingApproval.status === 'pending' && (
+                  <button
+                    type="button"
+                    onClick={() => void handleApprovalDecision(false)}
+                    disabled={pendingApproval.recovered && busy}
+                    className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-700 disabled:opacity-50"
+                  >
+                    Reject
+                  </button>
+                )}
               </div>
             </div>
           </div>

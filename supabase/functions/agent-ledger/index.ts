@@ -279,12 +279,16 @@ Deno.serve(async (request) => {
     }
 
     if (operation === 'claim_approval') {
-      const approvalId = text(body.approvalId, 80);
-      if (!approvalId) return jsonResponse(400, { error: 'Invalid approval claim.' });
+      const approvalRunId = text(body.runId, 80);
+      const actionType = text(body.actionType, 80);
+      if (!approvalRunId || !actionType || !FORMAL_OUTPUT_ACTIONS.has(actionType)) {
+        return jsonResponse(400, { error: 'Invalid approval claim.' });
+      }
       const { data, error } = await admin
         .from('agent_approvals')
         .update({ claimed_at: new Date().toISOString() })
-        .eq('id', approvalId)
+        .eq('run_id', approvalRunId)
+        .eq('action_type', actionType)
         .eq('user_id', user.id)
         .eq('status', 'approved')
         .is('claimed_at', null)

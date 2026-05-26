@@ -42,6 +42,10 @@ The Agent run ledger records each cloud Copilot request and its tool steps.
 before the Agent is allowed to create a formal downloadable output. Ledger
 writes and approval transitions are handled by the authenticated
 `agent-ledger` Edge Function; the browser has read-only access to these rows.
+The `VO Pack` workflow runs comparison, commercial summary, optional active
+model audit, and an approved PDF output as one durable run. An approved output
+is only marked consumed after generation succeeds, so interrupted runs can
+resume without silently losing their approval.
 
 ## Edge Functions
 
