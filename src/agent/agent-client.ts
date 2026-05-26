@@ -23,10 +23,12 @@ export interface OpenAIMessage {
 
 export type AgentEvent =
   | { kind: 'assistant_text'; text: string }
+  | { kind: 'assistant_delta'; text: string }
   | { kind: 'thinking'; text: string; step: number; totalSteps: number | null }
   | { kind: 'tool_start'; name: string; input: Record<string, unknown> }
   | { kind: 'tool_end'; name: string; result: unknown; durationMs: number }
   | { kind: 'credits'; balance: number | null }
+  | { kind: 'stopped'; message: string }
   | { kind: 'error'; message: string };
 
 export type AgentEvidenceType =
@@ -232,6 +234,104 @@ function directConversationReply(userText: string): string | null {
   return null;
 }
 
+interface AgentProxyResult {
+  response: unknown;
+  credits_balance: number | null;
+  turn_id: string | null;
+}
+
+interface StreamingMessageDelta {
+  role?: OpenAIMessage['role'];
+  content?: string | null;
+  tool_calls?: Array<{
+    index?: number;
+    id?: string;
+    type?: 'function';
+    function?: { name?: string; arguments?: string };
+  }>;
+}
+
+function appendStreamDelta(message: OpenAIMessage, delta: StreamingMessageDelta) {
+  if (delta.role) message.role = delta.role;
+  if (typeof delta.content === 'string') {
+    message.content = `${message.content ?? ''}${delta.content}`;
+  }
+  if (!Array.isArray(delta.tool_calls)) return;
+
+  const toolCalls = message.tool_calls ?? [];
+  for (const part of delta.tool_calls) {
+    const index = typeof part.index === 'number' ? part.index : toolCalls.length;
+    const existing = toolCalls[index] ?? {
+      id: part.id ?? `tool-${index}`,
+      type: 'function' as const,
+      function: { name: '', arguments: '' },
+    };
+    if (part.id) existing.id = part.id;
+    if (part.function?.name) existing.function.name += part.function.name;
+    if (part.function?.arguments) existing.function.arguments += part.function.arguments;
+    toolCalls[index] = existing;
+  }
+  message.tool_calls = toolCalls;
+}
+
+async function readStreamResponse(
+  res: Response,
+  onTextDelta?: (text: string) => void,
+): Promise<AgentProxyResult> {
+  if (!res.body) throw new Error('Agent proxy returned an empty stream.');
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  const message: OpenAIMessage = { role: 'assistant', content: '' };
+  let creditsBalance: number | null = null;
+  let turnId: string | null = null;
+  let buffer = '';
+
+  const acceptFrame = (frame: string) => {
+    let eventName = 'message';
+    const dataLines: string[] = [];
+    for (const line of frame.split(/\r?\n/u)) {
+      if (line.startsWith('event:')) eventName = line.slice(6).trim();
+      if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+    }
+    const data = dataLines.join('\n');
+    if (!data || data === '[DONE]') return;
+
+    const parsed = JSON.parse(data) as Record<string, unknown>;
+    if (eventName === 'meta') {
+      creditsBalance = typeof parsed.credits_balance === 'number' ? parsed.credits_balance : null;
+      turnId = typeof parsed.turn_id === 'string' ? parsed.turn_id : null;
+      return;
+    }
+    if (eventName === 'error') {
+      throw new Error(typeof parsed.error === 'string' ? parsed.error : 'Agent stream failed.');
+    }
+
+    const choices = parsed.choices;
+    if (!Array.isArray(choices) || choices.length === 0) return;
+    const delta = (choices[0] as { delta?: StreamingMessageDelta }).delta;
+    if (!delta) return;
+    appendStreamDelta(message, delta);
+    if (typeof delta.content === 'string' && delta.content) onTextDelta?.(delta.content);
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+    const frames = buffer.split(/\r?\n\r?\n/u);
+    buffer = frames.pop() ?? '';
+    for (const frame of frames) acceptFrame(frame);
+    if (done) break;
+  }
+  if (buffer.trim()) acceptFrame(buffer);
+
+  return {
+    response: { choices: [{ message }] },
+    credits_balance: creditsBalance,
+    turn_id: turnId,
+  };
+}
+
 // ── Proxy call ────────────────────────────────────────────────────────────────
 
 async function callAgentProxy(
@@ -244,8 +344,10 @@ async function callAgentProxy(
     routingHint?: string;
     roleOverlay?: string;
     turnId?: string | null;
+    signal?: AbortSignal;
+    onTextDelta?: (text: string) => void;
   } = {},
-): Promise<{ response: unknown; credits_balance: number | null; turn_id: string | null }> {
+): Promise<AgentProxyResult> {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
   if (!token) throw new Error('Not signed in. Please log in first.');
@@ -262,6 +364,7 @@ async function callAgentProxy(
 
   const res = await fetch(endpoint, {
     method: 'POST',
+    signal: options.signal,
     headers: {
       Authorization: `Bearer ${token}`,
       apikey: supabaseKey,
@@ -274,6 +377,11 @@ async function callAgentProxy(
       system: SYSTEM_PROMPT + (options.roleOverlay || '') + (options.dynamicContext || '') + (options.routingHint || '') + (options.memoryPrompt || ''),
     }),
   });
+
+  const contentType = res.headers.get('Content-Type') ?? '';
+  if (res.ok && contentType.includes('text/event-stream')) {
+    return await readStreamResponse(res, options.onTextDelta);
+  }
 
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
@@ -346,6 +454,7 @@ export class AgentSession {
   private onMemoryExtracted: ((memories: ExtractedMemory[]) => void) | null = null;
   private executionTracker: AgentExecutionTracker | null = null;
   private contextManager = new ContextManager();
+  private activeController: AbortController | null = null;
 
   constructor(private ctx: ToolContext) {}
 
@@ -387,8 +496,16 @@ export class AgentSession {
   }
 
   reset() {
+    this.stop();
     this.messages = [];
     this.contextManager.reset();
+  }
+
+  stop(): boolean {
+    if (!this.activeController) return false;
+    this.activeController.abort();
+    this.activeController = null;
+    return true;
   }
 
   getMessages(): readonly OpenAIMessage[] {
@@ -582,6 +699,8 @@ export class AgentSession {
       return directReply;
     }
 
+    const controller = new AbortController();
+    this.activeController = controller;
     const tracker = this.executionTracker;
     const runId = await tracker?.startRun({ request: userText, roleId: this.activeRoleId }) ?? null;
 
@@ -612,11 +731,21 @@ export class AgentSession {
           routingHint,
           roleOverlay: buildRoleOverlay(this.activeRoleId),
           turnId,
+          signal: controller.signal,
+          onTextDelta: (text) => onEvent({ kind: 'assistant_delta', text }),
         });
       } catch (err) {
+        if (controller.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
+          const message = '生成已停止。已开始的分析回合可能已经计费。';
+          onEvent({ kind: 'stopped', message });
+          if (runId) await tracker?.completeRun(runId, 'cancelled', message);
+          if (this.activeController === controller) this.activeController = null;
+          return '';
+        }
         const message = err instanceof Error ? err.message : String(err);
         onEvent({ kind: 'error', message });
         if (runId) await tracker?.completeRun(runId, 'failed', message);
+        if (this.activeController === controller) this.activeController = null;
         throw err;
       }
 
@@ -627,6 +756,7 @@ export class AgentSession {
       if (!assistantMsg) {
         onEvent({ kind: 'error', message: 'Empty model response.' });
         if (runId) await tracker?.completeRun(runId, 'failed', 'Empty model response.');
+        if (this.activeController === controller) this.activeController = null;
         return '';
       }
 
@@ -650,6 +780,7 @@ export class AgentSession {
           });
           await tracker?.completeRun(runId, 'completed', cleanText);
         }
+        if (this.activeController === controller) this.activeController = null;
         return cleanText;
       }
 
@@ -664,6 +795,7 @@ export class AgentSession {
           const message = 'Agent produced empty responses. Stopping.';
           onEvent({ kind: 'error', message });
           if (runId) await tracker?.completeRun(runId, 'failed', message);
+          if (this.activeController === controller) this.activeController = null;
           return '';
         }
         continue;
@@ -774,6 +906,7 @@ export class AgentSession {
     const msg = `Agent completed ${toolStep} tool steps across ${MAX_HOPS} reasoning hops.`;
     onEvent({ kind: 'error', message: msg });
     if (runId) await tracker?.completeRun(runId, 'failed', msg);
+    if (this.activeController === controller) this.activeController = null;
     return msg;
   }
 }

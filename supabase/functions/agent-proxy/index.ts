@@ -114,7 +114,7 @@ serve(async (request) => {
       max_tokens: MAX_TOKENS,
       temperature: 0.2,
       top_p: 0.7,
-      stream: false,
+      stream: true,
     };
     if (Array.isArray(tools) && tools.length > 0) {
       nimBody.tools = tools;
@@ -126,13 +126,14 @@ serve(async (request) => {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${nvidiaKey}`,
-        Accept: 'application/json',
+        Accept: 'text/event-stream',
       },
       body: JSON.stringify(nimBody),
+      signal: request.signal,
     });
 
-    const nimJson = await nimRes.json().catch(() => null);
     if (!nimRes.ok) {
+      const nimJson = await nimRes.json().catch(() => null);
       const msg =
         nimJson?.error?.message ||
         nimJson?.detail ||
@@ -141,10 +142,50 @@ serve(async (request) => {
       return jsonResponse(nimRes.status, { error: msg });
     }
 
-    return jsonResponse(200, {
-      response: nimJson,
-      credits_balance: newBalance,
-      turn_id: turnId,
+    if (!nimRes.body) return jsonResponse(502, { error: 'NVIDIA returned no stream body.' });
+
+    const encoder = new TextEncoder();
+    const upstream = nimRes.body.getReader();
+    const passthrough = new ReadableStream({
+      async start(controller) {
+        controller.enqueue(encoder.encode(
+          `event: meta\ndata: ${JSON.stringify({ credits_balance: newBalance, turn_id: turnId })}\n\n`,
+        ));
+        try {
+          while (true) {
+            const { value, done } = await upstream.read();
+            if (done) break;
+            controller.enqueue(value);
+          }
+        } catch (err) {
+          try {
+            controller.enqueue(encoder.encode(
+              `event: error\ndata: ${JSON.stringify({ error: err instanceof Error ? err.message : 'Upstream stream failed.' })}\n\n`,
+            ));
+          } catch {
+            // Client cancellation closes the downstream stream before an error frame can be sent.
+          }
+        } finally {
+          try {
+            controller.close();
+          } catch {
+            // The browser may already have cancelled the stream.
+          }
+        }
+      },
+      cancel(reason) {
+        return upstream.cancel(reason);
+      },
+    });
+
+    return new Response(passthrough, {
+      status: 200,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'X-Accel-Buffering': 'no',
+      },
     });
   } catch (err) {
     return jsonResponse(500, { error: err instanceof Error ? err.message : 'Unknown server error.' });

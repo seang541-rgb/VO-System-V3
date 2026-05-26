@@ -45,6 +45,13 @@ function finalTurn() {
   return proxyResponse({ role: 'assistant', content: 'Output was not generated.' });
 }
 
+function streamedTurn(...frames: string[]): Response {
+  return new Response(frames.join('\n\n') + '\n\n', {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+}
+
 function buildTracker(): AgentExecutionTracker {
   return {
     startRun: vi.fn().mockResolvedValue('run-1'),
@@ -180,5 +187,66 @@ describe('Agent formal output approvals', () => {
     expect(result).toContain('你好');
     expect(fetch).not.toHaveBeenCalled();
     expect(executeAgentTool).not.toHaveBeenCalled();
+  });
+
+  it('reconstructs streamed assistant content and exposes text deltas', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(streamedTurn(
+      'event: meta\ndata: {"credits_balance":3,"turn_id":"turn-stream"}',
+      'data: {"choices":[{"delta":{"role":"assistant","content":"正在"}}]}',
+      'data: {"choices":[{"delta":{"content":"分析"}}]}',
+      'data: [DONE]',
+    )));
+    const session = new AgentSession(emptyToolContext());
+    const onEvent = vi.fn();
+
+    const result = await session.send('分析当前任务', onEvent);
+
+    expect(result).toBe('正在分析');
+    expect(onEvent).toHaveBeenCalledWith({ kind: 'assistant_delta', text: '正在' });
+    expect(onEvent).toHaveBeenCalledWith({ kind: 'assistant_delta', text: '分析' });
+    expect(onEvent).toHaveBeenCalledWith({ kind: 'credits', balance: 3 });
+  });
+
+  it('reconstructs a streamed tool call before executing the tool', async () => {
+    vi.mocked(executeAgentTool).mockResolvedValueOnce({ model: 'base', matched: 0 });
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(streamedTurn(
+        'event: meta\ndata: {"credits_balance":3,"turn_id":"turn-tool"}',
+        'data: {"choices":[{"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call-stream","type":"function","function":{"name":"query_","arguments":"{\\"model\\":\\"base\\""}}]}}]}',
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"ifc","arguments":",\\"typeFilter\\":\\"IfcWall\\"}"}}]}}]}',
+        'data: [DONE]',
+      ))
+      .mockResolvedValueOnce(streamedTurn(
+        'event: meta\ndata: {"credits_balance":3,"turn_id":"turn-tool"}',
+        'data: {"choices":[{"delta":{"role":"assistant","content":"No walls found."}}]}',
+        'data: [DONE]',
+      )));
+    const session = new AgentSession(emptyToolContext());
+
+    const result = await session.send('Count base walls', vi.fn());
+
+    expect(executeAgentTool).toHaveBeenCalledWith(
+      'query_ifc',
+      { model: 'base', typeFilter: 'IfcWall' },
+      expect.any(Object),
+    );
+    expect(result).toBe('No walls found.');
+  });
+
+  it('cancels an active generated reply when stopped by the user', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, options?: RequestInit) => {
+      if (options?.signal?.aborted) {
+        return Promise.reject(new DOMException('Aborted', 'AbortError'));
+      }
+      return Promise.reject(new Error('Expected request to be aborted before fetch.'));
+    }));
+    const session = new AgentSession(emptyToolContext());
+    const onEvent = vi.fn();
+
+    const pending = session.send('分析一个较长的任务', onEvent);
+    expect(session.stop()).toBe(true);
+    await expect(pending).resolves.toBe('');
+
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ kind: 'stopped' }));
   });
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles, Send, RefreshCw, Wrench, Loader2, Brain, Plus, MessageSquare, ChevronDown, UserCog, Lightbulb, X, ShieldCheck, FileCheck2 } from 'lucide-react';
+import { Sparkles, Send, Square, RefreshCw, Wrench, Loader2, Brain, Plus, MessageSquare, ChevronDown, UserCog, Lightbulb, X, ShieldCheck, FileCheck2 } from 'lucide-react';
 import { AgentSession, type AgentEvent, type OpenAIMessage, type ExtractedMemory } from '../agent/agent-client';
 import type { ToolContext } from '../agent/tools';
 import { useCopilotHistory } from '../hooks/useCopilotHistory';
@@ -44,6 +44,8 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [canStop, setCanStop] = useState(false);
+  const [streamingText, setStreamingText] = useState('');
   const [activeToolLabel, setActiveToolLabel] = useState<string | null>(null);
   const [agentStep, setAgentStep] = useState(0);
   const [showConvList, setShowConvList] = useState(false);
@@ -156,19 +158,27 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
       pushEntry({ id: newId(), kind: 'user', text: trimmed });
       setInput('');
       setBusy(true);
+      setCanStop(true);
+      setStreamingText('');
       setActiveToolLabel(null);
       setAgentStep(0);
 
       const handleEvent = (event: AgentEvent) => {
         switch (event.kind) {
           case 'assistant_text':
+            setStreamingText('');
             if (event.text) pushEntry({ id: newId(), kind: 'assistant', text: event.text });
             break;
+          case 'assistant_delta':
+            setStreamingText((current) => current + event.text);
+            break;
           case 'thinking':
+            setStreamingText('');
             setAgentStep(event.step);
             if (event.text) pushEntry({ id: newId(), kind: 'thinking', text: event.text, meta: `Step ${event.step}` });
             break;
           case 'tool_start':
+            setStreamingText('');
             setActiveToolLabel(event.name);
             pushEntry({
               id: newId(),
@@ -190,7 +200,12 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
             if (typeof event.balance === 'number' && onCreditsUpdate) onCreditsUpdate(event.balance);
             break;
           case 'error':
+            setStreamingText('');
             pushEntry({ id: newId(), kind: 'error', text: event.message });
+            break;
+          case 'stopped':
+            setStreamingText('');
+            pushEntry({ id: newId(), kind: 'assistant', text: event.message });
             break;
         }
       };
@@ -205,11 +220,17 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
         });
       } finally {
         setBusy(false);
+        setCanStop(false);
+        setStreamingText('');
         setActiveToolLabel(null);
       }
     },
     [bindConversation, busy, createConv, onCreditsUpdate, projectId, pushEntry, signedIn, toolContext],
   );
+
+  const handleStop = useCallback(() => {
+    sessionRef.current?.stop();
+  }, []);
 
   const handleApprovalDecision = useCallback(async (approved: boolean) => {
     const recovered = pendingApproval?.recovered ?? false;
@@ -312,8 +333,8 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
     } catch (error) {
       pushEntry({ id: newId(), kind: 'error', text: error instanceof Error ? error.message : String(error) });
     } finally {
-      setBusy(false);
-      setActiveToolLabel(null);
+        setBusy(false);
+        setActiveToolLabel(null);
     }
   }, [bindConversation, canRunVoPack, createConv, onCreditsUpdate, projectId, pushEntry, toolContext, tracker]);
 
@@ -690,6 +711,15 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
           );
         })}
 
+        {streamingText && (
+          <div className="flex justify-start">
+            <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tl-sm border border-blue-500/30 bg-slate-800/80 px-3.5 py-2 text-sm text-slate-100 shadow">
+              {streamingText}
+              <span className="ml-1 inline-block h-3 w-1 animate-pulse bg-blue-400 align-middle" />
+            </div>
+          </div>
+        )}
+
         {busy && (
           <div className="flex items-center gap-3 rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3">
             <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
@@ -731,16 +761,27 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
             disabled={busy || !signedIn}
             className="flex-1 resize-none rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-blue-600/60 focus:outline-none disabled:opacity-60"
           />
-          <button
-            type="submit"
-            disabled={busy || !signedIn || !input.trim()}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Send className="h-4 w-4" /> 发送
-          </button>
+          {canStop ? (
+            <button
+              type="button"
+              onClick={handleStop}
+              title="停止生成（已开始的分析可能已经计费）"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/50 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-200 shadow hover:bg-red-500/20"
+            >
+              <Square className="h-4 w-4 fill-current" /> 停止
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={busy || !signedIn || !input.trim()}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Send className="h-4 w-4" /> 发送
+            </button>
+          )}
         </div>
         <div className="mt-2 text-[11px] text-slate-500">
-          每次对话消耗 1 个 credit（与 Excel 导出共用同一余额）。
+          AI 分析任务消耗 1 个 credit；简单问候免费。停止生成不会撤销已经开始的计费回合。
         </div>
       </form>
     </div>
