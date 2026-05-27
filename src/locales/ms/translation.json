@@ -6,7 +6,8 @@
   "nav": {
     "dashboard": "Papan Pemuka",
     "settings": "Tetapan",
-    "signOut": "Log Keluar"
+    "signOut": "Log Keluar",
+    "localWorkspace": "Ruang Kerja Tempatan"
   },
   "dashboard": {
     "title": "Projek Saya",
@@ -95,7 +96,17 @@
     "title": "Audit Pematuhan",
     "running": "Audit sedang berjalan…",
     "complete": "Audit selesai",
-    "failed": "Audit gagal"
+    "failed": "Audit gagal",
+    "quantityTakeoff": "Laporan Pengukuran Kuantiti",
+    "idleHint": "Muat naik fail IFC kemudian klik 'Jalankan Audit' untuk menjana laporan pengukuran kuantiti",
+    "runAudit": "Jalankan Audit",
+    "runningTitle": "Mengira kuantiti…",
+    "runningHint": "Menghurai elemen IFC, mengira isipadu dan luas, pengelasan SMM2",
+    "errorTitle": "Pengukuran kuantiti gagal",
+    "retry": "Cuba Semula",
+    "reportTitle": "Laporan Pengukuran Kuantiti",
+    "recordCount": "elemen · pengukuran selesai · masa",
+    "seconds": "s"
   },
   "billing": {
     "credits": "Kredit",
@@ -113,6 +124,43 @@
     "cardCopilotDesc": "Agen Analisis Pintar",
     "cardExport": "Eksport Laporan",
     "cardExportDesc": "Eksport Excel & PDF"
+  },
+  "viewer": {
+    "noFile": "Tiada fail dipilih",
+    "workspaceStatus": "Status Ruang Kerja"
+  },
+  "sidebar": {
+    "workspace": "Ruang Kerja",
+    "baseIfc": "IFC Asas",
+    "revisionIfc": "IFC Semakan",
+    "awardedBq": "BQ Dianugerah",
+    "notLoaded": "Belum dimuat · klik untuk muat naik",
+    "components": "komponen",
+    "lineItemsReady": "item sedia",
+    "parsingIfc": "Menghurai komponen IFC…",
+    "quickActions": "Tindakan Pantas",
+    "runAudit": "Jalankan Audit",
+    "auditing": "Mengaudit…",
+    "auditSubtitle": "Pengukuran kuantiti pantas",
+    "runVo": "Jalankan Perbandingan VO",
+    "voSubtitle": "Bandingkan asas / semakan",
+    "exportExcel": "Eksport VO Excel",
+    "checking": "Menyemak…",
+    "exportSubtitle": "Jana laporan substantif",
+    "bqTemplate": "Templat BQ",
+    "bqSubtitle": "Muat turun templat",
+    "views": "Paparan",
+    "copilot": "IFC Copilot",
+    "auditReport": "Laporan Audit",
+    "modelDiff": "Model 3D & Perbezaan",
+    "bqMapping": "Pemetaan BQ & Penilaian",
+    "status": "Status",
+    "ready": "Sedia",
+    "pending": "Menunggu",
+    "parsing": "Menghurai",
+    "error": "Ralat",
+    "done": "Selesai",
+    "comparison": "Perbandingan"
   },
   "toast": {
     "projectCreated": "Projek dicipta",

@@ -6,7 +6,8 @@
   "nav": {
     "dashboard": "项目面板",
     "settings": "设置",
-    "signOut": "退出登录"
+    "signOut": "退出登录",
+    "localWorkspace": "本地工作区"
   },
   "dashboard": {
     "title": "我的项目",
@@ -95,7 +96,17 @@
     "title": "合规审计",
     "running": "审计运行中…",
     "complete": "审计完成",
-    "failed": "审计失败"
+    "failed": "审计失败",
+    "quantityTakeoff": "算量报告",
+    "idleHint": "上传 IFC 文件后点击「运行审计」即可快速生成算量报告",
+    "runAudit": "运行审计",
+    "runningTitle": "正在算量…",
+    "runningHint": "解析 IFC 构件、计算体积面积、SMM2 分类中",
+    "errorTitle": "算量失败",
+    "retry": "重试",
+    "reportTitle": "算量报告",
+    "recordCount": "个构件 · 算量完成 · 耗时",
+    "seconds": "秒"
   },
   "billing": {
     "credits": "积分",
@@ -113,6 +124,43 @@
     "cardCopilotDesc": "智能分析助手",
     "cardExport": "导出报告",
     "cardExportDesc": "Excel 和 PDF 导出"
+  },
+  "viewer": {
+    "noFile": "未选择文件",
+    "workspaceStatus": "工作区状态"
+  },
+  "sidebar": {
+    "workspace": "工作区",
+    "baseIfc": "基准 IFC",
+    "revisionIfc": "修订 IFC",
+    "awardedBq": "中标工料清单",
+    "notLoaded": "未加载 · 点击上传",
+    "components": "个构件",
+    "lineItemsReady": "项已就绪",
+    "parsingIfc": "正在解析 IFC 构件…",
+    "quickActions": "快捷操作",
+    "runAudit": "运行审计",
+    "auditing": "审计中…",
+    "auditSubtitle": "快速算量",
+    "runVo": "运行 VO 比对",
+    "voSubtitle": "对比基准与修订版本",
+    "exportExcel": "导出 VO Excel",
+    "checking": "检查中…",
+    "exportSubtitle": "生成实证报告",
+    "bqTemplate": "BQ 模板",
+    "bqSubtitle": "下载模板",
+    "views": "视图",
+    "copilot": "IFC Copilot",
+    "auditReport": "审计报告",
+    "modelDiff": "3D 模型 & 差异",
+    "bqMapping": "BQ 映射 & 估价",
+    "status": "状态",
+    "ready": "就绪",
+    "pending": "待处理",
+    "parsing": "解析中",
+    "error": "错误",
+    "done": "完成",
+    "comparison": "比对结果"
   },
   "toast": {
     "projectCreated": "项目已创建",

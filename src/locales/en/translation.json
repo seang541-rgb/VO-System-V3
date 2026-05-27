@@ -6,7 +6,8 @@
   "nav": {
     "dashboard": "Dashboard",
     "settings": "Settings",
-    "signOut": "Sign Out"
+    "signOut": "Sign Out",
+    "localWorkspace": "Local Workspace"
   },
   "dashboard": {
     "title": "My Projects",
@@ -95,7 +96,17 @@
     "title": "Compliance Audit",
     "running": "Audit running…",
     "complete": "Audit complete",
-    "failed": "Audit failed"
+    "failed": "Audit failed",
+    "quantityTakeoff": "Quantity Takeoff Report",
+    "idleHint": "Upload IFC files then click 'Run Audit' to generate a quantity takeoff report",
+    "runAudit": "Run Audit",
+    "runningTitle": "Calculating quantities…",
+    "runningHint": "Parsing IFC elements, calculating volumes and areas, SMM2 classification",
+    "errorTitle": "Quantity takeoff failed",
+    "retry": "Retry",
+    "reportTitle": "Quantity Takeoff Report",
+    "recordCount": "elements · quantity takeoff complete · took",
+    "seconds": "s"
   },
   "billing": {
     "credits": "Credits",
@@ -113,6 +124,43 @@
     "cardCopilotDesc": "Smart Analysis Agent",
     "cardExport": "Export Report",
     "cardExportDesc": "Excel & PDF Export"
+  },
+  "viewer": {
+    "noFile": "No file selected",
+    "workspaceStatus": "Workspace Status"
+  },
+  "sidebar": {
+    "workspace": "Workspace",
+    "baseIfc": "Base IFC",
+    "revisionIfc": "Revision IFC",
+    "awardedBq": "Awarded BQ",
+    "notLoaded": "Not loaded · click to upload",
+    "components": "components",
+    "lineItemsReady": "line items ready",
+    "parsingIfc": "Parsing IFC components...",
+    "quickActions": "Quick Actions",
+    "runAudit": "Run Audit",
+    "auditing": "Auditing...",
+    "auditSubtitle": "Quick quantity takeoff",
+    "runVo": "Run VO Comparison",
+    "voSubtitle": "Compare base / revision",
+    "exportExcel": "Export VO Excel",
+    "checking": "Checking...",
+    "exportSubtitle": "Generate substantiation report",
+    "bqTemplate": "BQ Template",
+    "bqSubtitle": "Download template",
+    "views": "Views",
+    "copilot": "IFC Copilot",
+    "auditReport": "Audit Report",
+    "modelDiff": "3D Model & Diff",
+    "bqMapping": "BQ Mapping & Valuation",
+    "status": "Status",
+    "ready": "Ready",
+    "pending": "Pending",
+    "parsing": "Parsing",
+    "error": "Error",
+    "done": "Done",
+    "comparison": "Comparison"
   },
   "toast": {
     "projectCreated": "Project created",

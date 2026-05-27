@@ -78,7 +78,7 @@ export default function AppHeader({
         <div className="flex items-center gap-3">
           {localMode ? (
             <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-[11px] font-semibold uppercase text-blue-300">
-              Local Workspace
+              {t('nav.localWorkspace')}
             </div>
           ) : (
             <>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Loader2, Zap, ChevronDown, ChevronUp, AlertCircle, BarChart3 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { AuditResult } from '../audit/types';
 
 export type AuditState = 'idle' | 'running' | 'done' | 'error';
@@ -38,6 +39,7 @@ function ElapsedTimer({ running }: { running: boolean }) {
 }
 
 export default function AuditPanel({ auditResult, auditState, auditError, auditDurationMs, onRunAudit, canRun }: AuditPanelProps) {
+  const { t } = useTranslation();
   const [showClassifications, setShowClassifications] = useState(false);
   const [showSources, setShowSources] = useState(false);
 
@@ -47,8 +49,8 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
       <div className="flex flex-col items-center justify-center gap-6 px-6 py-20">
         <BarChart3 className="h-12 w-12 text-slate-600" />
         <div className="text-center">
-          <div className="text-lg font-bold text-slate-300">Quantity Takeoff Report</div>
-          <div className="mt-2 text-sm text-slate-500">上传 IFC 文件后点击「Run Audit」即可快速生成算量报告</div>
+          <div className="text-lg font-bold text-slate-300">{t('audit.quantityTakeoff')}</div>
+          <div className="mt-2 text-sm text-slate-500">{t('audit.idleHint')}</div>
         </div>
         <button
           type="button"
@@ -56,7 +58,7 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
           disabled={!canRun}
           className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <Zap className="h-4 w-4" /> Run Audit
+          <Zap className="h-4 w-4" /> {t('audit.runAudit')}
         </button>
       </div>
     );
@@ -68,8 +70,8 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
       <div className="flex flex-col items-center justify-center gap-6 px-6 py-20">
         <Loader2 className="h-10 w-10 animate-spin text-blue-400" />
         <div className="text-center">
-          <div className="text-lg font-bold text-blue-300">正在算量…</div>
-          <div className="mt-2 text-sm text-slate-500">解析 IFC 构件、计算体积面积、SMM2 分类中</div>
+          <div className="text-lg font-bold text-blue-300">{t('audit.runningTitle')}</div>
+          <div className="mt-2 text-sm text-slate-500">{t('audit.runningHint')}</div>
           <div className="mt-3 text-3xl font-bold">
             <ElapsedTimer running />
           </div>
@@ -84,7 +86,7 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
       <div className="flex flex-col items-center justify-center gap-6 px-6 py-20">
         <AlertCircle className="h-10 w-10 text-red-400" />
         <div className="text-center">
-          <div className="text-lg font-bold text-red-300">算量失败</div>
+          <div className="text-lg font-bold text-red-300">{t('audit.errorTitle')}</div>
           <div className="mt-2 max-w-md text-sm text-red-400">{auditError}</div>
         </div>
         <button
@@ -93,7 +95,7 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
           disabled={!canRun}
           className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <Zap className="h-4 w-4" /> Retry
+          <Zap className="h-4 w-4" /> {t('audit.retry')}
         </button>
       </div>
     );
@@ -116,9 +118,9 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
         <div className="flex items-center gap-3">
           <Zap className="h-5 w-5 text-amber-400" />
           <div>
-            <div className="text-sm font-bold uppercase tracking-[0.18em] text-amber-400">算量报告 · Quantity Takeoff Report</div>
+            <div className="text-sm font-bold uppercase tracking-[0.18em] text-amber-400">{t('audit.reportTitle')}</div>
             <div className="text-[11px] text-slate-400">
-              {summary.recordCount} 构件 · 算量完成 · 耗时 {durationSec}s
+              {summary.recordCount} {t('audit.recordCount')} {durationSec}{t('audit.seconds')}
             </div>
           </div>
         </div>
