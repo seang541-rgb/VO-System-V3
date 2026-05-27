@@ -2,10 +2,9 @@
 // Supabase Edge Function: authenticated NVIDIA NIM proxy with per-turn billing.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+import { buildNimRequest, resolveBillingMode, validateAgentProxyPayload } from './policy.ts';
 
 const NVIDIA_ENDPOINT = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const DEFAULT_MODEL = 'deepseek-ai/deepseek-v4-pro';
-const MAX_TOKENS = 4096;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -54,13 +53,14 @@ serve(async (request) => {
     const authUser = await authRes.json();
     if (!authUser?.id) return jsonResponse(401, { error: 'Could not identify user.' });
 
-    const payload = await request.json().catch(() => null);
-    if (!payload || !Array.isArray(payload.messages) || payload.messages.length === 0) {
-      return jsonResponse(400, { error: 'messages must be a non-empty array.' });
+    let payload;
+    try {
+      payload = validateAgentProxyPayload(await request.json().catch(() => null));
+    } catch (error) {
+      return jsonResponse(400, { error: error instanceof Error ? error.message : 'Invalid request.' });
     }
 
-    const requestedTurnId =
-      typeof payload.turn_id === 'string' && payload.turn_id ? payload.turn_id : null;
+    const requestedTurnId = payload.turnId;
     if (requestedTurnId && payload.messages[payload.messages.length - 1]?.role !== 'tool') {
       return jsonResponse(400, { error: 'Agent continuations must end with a tool result.' });
     }
@@ -71,20 +71,16 @@ serve(async (request) => {
         .map((message) => message.content ?? null),
     ));
 
-    // DEV/owner bypass — when the BYPASS_CREDITS secret is set to "true" the
-    // proxy skips the per-turn billing RPC entirely. Set to a sentinel balance
-    // so the UI still reflects "credits remaining" without burning real ones.
-    // REMOVE the secret (or set to "false") to re-enable real billing.
-    const bypassCredits = Deno.env.get('BYPASS_CREDITS') === 'true';
+    const billingMode = resolveBillingMode(
+      authUser.id,
+      Deno.env.get('AGENT_CREDIT_BYPASS_USER_IDS'),
+    );
 
     let newBalance: number | null = null;
     let turnId: string | null = requestedTurnId;
 
-    if (bypassCredits) {
-      newBalance = 9999;
+    if (billingMode === 'owner_test_bypass') {
       if (!turnId) {
-        // Generate a v4-style UUID locally so downstream code that ties evidence
-        // to a turn still has a stable identifier.
         turnId = crypto.randomUUID();
       }
     } else {
@@ -119,25 +115,7 @@ serve(async (request) => {
         rpcJson && typeof rpcJson.turn_id === 'string' ? rpcJson.turn_id : null;
     }
 
-    const { messages, tools, system, model } = payload;
-    const nimMessages = [];
-    if (typeof system === 'string' && system.trim()) {
-      nimMessages.push({ role: 'system', content: system });
-    }
-    nimMessages.push(...messages);
-
-    const nimBody = {
-      model: typeof model === 'string' && model ? model : DEFAULT_MODEL,
-      messages: nimMessages,
-      max_tokens: MAX_TOKENS,
-      temperature: 0.2,
-      top_p: 0.7,
-      stream: true,
-    };
-    if (Array.isArray(tools) && tools.length > 0) {
-      nimBody.tools = tools;
-      nimBody.tool_choice = 'auto';
-    }
+    const nimBody = buildNimRequest(payload);
 
     const nimRes = await fetch(NVIDIA_ENDPOINT, {
       method: 'POST',
@@ -167,7 +145,7 @@ serve(async (request) => {
     const passthrough = new ReadableStream({
       async start(controller) {
         controller.enqueue(encoder.encode(
-          `event: meta\ndata: ${JSON.stringify({ credits_balance: newBalance, turn_id: turnId })}\n\n`,
+          `event: meta\ndata: ${JSON.stringify({ credits_balance: newBalance, turn_id: turnId, billing_mode: billingMode })}\n\n`,
         ));
         try {
           while (true) {

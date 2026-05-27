@@ -15,8 +15,10 @@ vi.mock('../lib/supabase', () => ({
 }));
 
 vi.mock('./tools', () => ({
-  OPENAI_TOOL_DEFINITIONS: [],
-  getAvailableTools: vi.fn().mockReturnValue([]),
+  getAvailableTools: vi.fn().mockReturnValue(
+    ['query_ifc', 'compare_ifc', 'summarize_commercial_impact', 'audit_ifc', 'ocr_document', 'export_vo_excel', 'generate_report']
+      .map((name) => ({ type: 'function', function: { name, parameters: {} } })),
+  ),
   buildToolRoutingHint: vi.fn().mockReturnValue(''),
   executeAgentTool: vi.fn(),
 }));
@@ -26,6 +28,7 @@ function proxyResponse(message: Record<string, unknown>): Response {
     response: { choices: [{ message }] },
     credits_balance: 4,
     turn_id: 'turn-1',
+    billing_mode: 'metered',
   }), { status: 200 });
 }
 
@@ -211,9 +214,9 @@ describe('Agent formal output approvals', () => {
     expect(executeAgentTool).not.toHaveBeenCalled();
   });
 
-  it('reconstructs streamed assistant content and exposes text deltas', async () => {
+  it('buffers streamed assistant content while tools may still be called', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(streamedTurn(
-      'event: meta\ndata: {"credits_balance":3,"turn_id":"turn-stream"}',
+      'event: meta\ndata: {"credits_balance":3,"turn_id":"turn-stream","billing_mode":"metered"}',
       'data: {"choices":[{"delta":{"role":"assistant","content":"正在"}}]}',
       'data: {"choices":[{"delta":{"content":"分析"}}]}',
       'data: [DONE]',
@@ -224,9 +227,47 @@ describe('Agent formal output approvals', () => {
     const result = await session.send('分析当前任务', onEvent);
 
     expect(result).toBe('正在分析');
-    expect(onEvent).toHaveBeenCalledWith({ kind: 'assistant_delta', text: '正在' });
-    expect(onEvent).toHaveBeenCalledWith({ kind: 'assistant_delta', text: '分析' });
-    expect(onEvent).toHaveBeenCalledWith({ kind: 'credits', balance: 3 });
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'assistant_delta' }));
+    expect(onEvent).toHaveBeenCalledWith({ kind: 'credits', balance: 3, billingMode: 'metered' });
+  });
+
+  it('submits only workspace state and enabled tool names to the proxy', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(proxyResponse({
+      role: 'assistant',
+      content: 'Done.',
+    })));
+    const session = new AgentSession(baseLoadedToolContext());
+
+    await session.send('Describe loaded model data.', vi.fn());
+
+    const request = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(String(request.body)) as Record<string, unknown>;
+    expect(body).toEqual(expect.objectContaining({
+      messages: expect.any(Array),
+      enabled_tools: expect.any(Array),
+      workspace: expect.objectContaining({ baseLoaded: true, revisionLoaded: false }),
+    }));
+    expect(body).not.toHaveProperty('model');
+    expect(body).not.toHaveProperty('system');
+    expect(body).not.toHaveProperty('tools');
+  });
+
+  it('reports owner bypass mode without overwriting the real credit balance', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(streamedTurn(
+      'event: meta\ndata: {"credits_balance":null,"turn_id":"turn-dev","billing_mode":"owner_test_bypass"}',
+      'data: {"choices":[{"delta":{"role":"assistant","content":"Ready"}}]}',
+      'data: [DONE]',
+    )));
+    const session = new AgentSession(emptyToolContext());
+    const onEvent = vi.fn();
+
+    await session.send('Review this input.', onEvent);
+
+    expect(onEvent).toHaveBeenCalledWith({
+      kind: 'credits',
+      balance: null,
+      billingMode: 'owner_test_bypass',
+    });
   });
 
   it('reconstructs a streamed tool call before executing the tool', async () => {
@@ -253,6 +294,47 @@ describe('Agent formal output approvals', () => {
       expect.any(Object),
     );
     expect(result).toBe('No walls found.');
+  });
+
+  it('does not expose model reasoning emitted before a tool call', async () => {
+    vi.mocked(executeAgentTool).mockResolvedValueOnce({ model: 'base', matched: 0 });
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(proxyResponse({
+        role: 'assistant',
+        content: 'I will reason through the file now.',
+        tool_calls: [{
+          id: 'call-hidden-reasoning',
+          type: 'function',
+          function: { name: 'query_ifc', arguments: '{"model":"base"}' },
+        }],
+      }))
+      .mockResolvedValueOnce(proxyResponse({ role: 'assistant', content: 'No match.' })));
+    const session = new AgentSession(baseLoadedToolContext());
+    const onEvent = vi.fn();
+
+    await session.send('Inspect base model.', onEvent);
+
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'thinking' }));
+  });
+
+  it('does not stream text that precedes a streamed tool call', async () => {
+    vi.mocked(executeAgentTool).mockResolvedValueOnce({ model: 'base', matched: 0 });
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(streamedTurn(
+        'event: meta\ndata: {"credits_balance":3,"turn_id":"turn-mixed","billing_mode":"metered"}',
+        'data: {"choices":[{"delta":{"role":"assistant","content":"Hidden reasoning."}}]}',
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-mixed","type":"function","function":{"name":"query_ifc","arguments":"{\\"model\\":\\"base\\"}"}}]}}]}',
+        'data: [DONE]',
+      ))
+      .mockResolvedValueOnce(proxyResponse({ role: 'assistant', content: 'Final answer.' })));
+    const session = new AgentSession(baseLoadedToolContext());
+    const onEvent = vi.fn();
+
+    const result = await session.send('Inspect safely.', onEvent);
+
+    expect(result).toBe('Final answer.');
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'assistant_delta', text: 'Hidden reasoning.' }));
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'thinking' }));
   });
 
   it('blocks a fabricated IFC absence conclusion when no model evidence is available', async () => {
@@ -314,13 +396,7 @@ describe('Agent formal output approvals', () => {
     expect(result).toContain('no queryable IFC model content');
   });
 
-  it('blocks an unsupported knowledge answer while a required lookup has no evidence', async () => {
-    vi.mocked(executeAgentTool).mockResolvedValueOnce({
-      source: 'ubbl',
-      query: 'minimum height',
-      count: 0,
-      matches: [],
-    });
+  it('blocks a regulatory conclusion because the regulatory tool is paused', async () => {
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(proxyResponse({
         role: 'assistant',
@@ -341,37 +417,21 @@ describe('Agent formal output approvals', () => {
 
     const result = await session.send('住宅房间最低净高是多少？请给具体条文。', onEvent);
 
-    expect(result).toContain('没有找到能够支撑结论的匹配记录');
+    expect(result).toContain('当前稳定化阶段尚未开放');
     expect(result).not.toContain('By-Law 23');
+    expect(executeAgentTool).not.toHaveBeenCalled();
     expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'assistant_delta' }));
   });
 
-  it('allows a grounded answer after a later lookup resolves an empty search', async () => {
-    vi.mocked(executeAgentTool)
-      .mockResolvedValueOnce({ source: 'ubbl', query: 'room height', count: 0, matches: [] })
-      .mockResolvedValueOnce({
-        source: 'ubbl',
-        query: 'habitable room',
-        count: 1,
-        matches: [{ citation: 'Verified returned citation', title: 'Habitable rooms' }],
-      });
+  it('rejects a disabled regulatory tool call even if returned by the model', async () => {
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(proxyResponse({
         role: 'assistant',
         content: null,
         tool_calls: [{
-          id: 'call-empty',
+          id: 'call-disabled',
           type: 'function',
           function: { name: 'lookup_regulation', arguments: '{"query":"room height","source":"ubbl"}' },
-        }],
-      }))
-      .mockResolvedValueOnce(proxyResponse({
-        role: 'assistant',
-        content: null,
-        tool_calls: [{
-          id: 'call-resolved',
-          type: 'function',
-          function: { name: 'lookup_regulation', arguments: '{"query":"habitable room","source":"ubbl"}' },
         }],
       }))
       .mockResolvedValueOnce(streamedTurn(
@@ -383,7 +443,9 @@ describe('Agent formal output approvals', () => {
 
     const result = await session.send('Find the verified room-height rule.', vi.fn());
 
-    expect(result).toBe('Verified returned citation');
+    expect(result).toContain('not enabled during the current stability phase');
+    expect(result).not.toContain('Verified returned citation');
+    expect(executeAgentTool).not.toHaveBeenCalled();
   });
 
   it('cancels an active generated reply when stopped by the user', async () => {

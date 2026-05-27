@@ -18,6 +18,10 @@ export interface VoReportContext {
   pricingContext?: BqMappingContext;
 }
 
+function hasVerifiedPricingContext(pricingContext?: BqMappingContext) {
+  return !!pricingContext && Object.keys(pricingContext.itemsByReference).length > 0;
+}
+
 function formatCurrencyValue(value: number) {
   return `${PROJECT_QS_OVERRIDES.currencySymbol} ${value.toFixed(2)}`;
 }
@@ -502,7 +506,7 @@ function buildSectionSummary(rows: VoCommercialAction[]) {
     .map(([, value]) => value);
 }
 
-function buildCoverSheet(rows: VoCommercialAction[], results: VoComparisonResults, context: VoReportContext) {
+function buildCoverSheet(rows: VoCommercialAction[], results: VoComparisonResults, context: VoReportContext, pricingVerified: boolean) {
   const breakdown = buildCommercialBreakdown(results, context.pricingContext);
   const sectionSummary = buildSectionSummary(rows);
   const starRateItems = rows
@@ -543,11 +547,11 @@ function buildCoverSheet(rows: VoCommercialAction[], results: VoComparisonResult
     ['Pending Rate Actions', breakdown.summary.pendingRateActions],
     ['Contract BQ Rated Actions', breakdown.actions.filter((action) => action.pricingSource === 'contract-bq').length],
     ['High-Risk Quantity Items', breakdown.summary.highRiskQuantityItems],
-    ['Addition Value', formatSignedCurrencyValue(breakdown.summary.additionValue)],
-    ['Omission Value', formatSignedCurrencyValue(breakdown.summary.omissionValue)],
-    ['Net Rated Value', formatSignedCurrencyValue(breakdown.summary.netValue)],
+    ['Addition Value', pricingVerified ? formatSignedCurrencyValue(breakdown.summary.additionValue) : 'Pending BQ / rate verification'],
+    ['Omission Value', pricingVerified ? formatSignedCurrencyValue(breakdown.summary.omissionValue) : 'Pending BQ / rate verification'],
+    ['Net Rated Value', pricingVerified ? formatSignedCurrencyValue(breakdown.summary.netValue) : 'Pending BQ / rate verification'],
     ['QS Filtered Items', results.qsSummary.ignoredItems],
-    ['Protected Value', formatCurrencyValue(results.qsSummary.protectedValue)],
+    ['Protected Value', results.qsSummary.protectedValue > 0 ? 'Pending verified project valuation basis' : '-'],
     ['Formwork Alerts', results.qsSummary.formworkAlerts],
     ['Star Rate Candidates', breakdown.actions.filter((action) => action.action === 'Addition' && (Boolean(action.starRateCandidate) || action.rateStatus === 'forced-star-rate')).length],
     ['EOT Flags', results.qsSummary.eotFlags],
@@ -555,8 +559,8 @@ function buildCoverSheet(rows: VoCommercialAction[], results: VoComparisonResult
     ['Section Snapshot'],
     ['Section', 'Title', 'Rows', 'Omissions', 'Additions', 'Pending Rates', 'Net Value', 'Star Rate'],
     ...(sectionSummary.length > 0
-      ? sectionSummary.map((item) => [item.code, item.title, item.items, item.omissions, item.additions, item.pendingRates, formatSignedCurrencyValue(item.netValue), item.starRate])
-      : [['-', 'No sections detected', 0, 0, 0, 0, formatSignedCurrencyValue(0), 0]]),
+      ? sectionSummary.map((item) => [item.code, item.title, item.items, item.omissions, item.additions, item.pendingRates, pricingVerified ? formatSignedCurrencyValue(item.netValue) : 'Pending verification', item.starRate])
+      : [['-', 'No sections detected', 0, 0, 0, 0, pricingVerified ? formatSignedCurrencyValue(0) : 'Pending verification', 0]]),
     [],
     ['Submission Notes'],
     ['1. Commercial output forces all Modified items into Omission and Addition actions.'],
@@ -588,7 +592,7 @@ function buildCoverSheet(rows: VoCommercialAction[], results: VoComparisonResult
   return sheet;
 }
 
-function buildSummarySheet(results: VoComparisonResults, pricingContext?: BqMappingContext) {
+function buildSummarySheet(results: VoComparisonResults, pricingContext: BqMappingContext | undefined, pricingVerified: boolean) {
   const breakdown = buildCommercialBreakdown(results, pricingContext);
   const sheet = XLSX.utils.aoa_to_sheet([
     [`VO Substantiation Summary - ${PROJECT_QS_OVERRIDES.projectName}`],
@@ -603,12 +607,12 @@ function buildSummarySheet(results: VoComparisonResults, pricingContext?: BqMapp
     ['Rated Actions', breakdown.summary.ratedActions],
     ['Pending Rate Actions', breakdown.summary.pendingRateActions],
     ['High-Risk Quantity Items', breakdown.summary.highRiskQuantityItems],
-    ['Addition Value', formatSignedCurrencyValue(breakdown.summary.additionValue)],
-    ['Omission Value', formatSignedCurrencyValue(breakdown.summary.omissionValue)],
-    ['Net Rated Value', formatSignedCurrencyValue(breakdown.summary.netValue)],
+    ['Addition Value', pricingVerified ? formatSignedCurrencyValue(breakdown.summary.additionValue) : 'Pending BQ / rate verification'],
+    ['Omission Value', pricingVerified ? formatSignedCurrencyValue(breakdown.summary.omissionValue) : 'Pending BQ / rate verification'],
+    ['Net Rated Value', pricingVerified ? formatSignedCurrencyValue(breakdown.summary.netValue) : 'Pending BQ / rate verification'],
     ['QS Counted Items', results.qsSummary.countedItems],
     ['QS Filtered Items', results.qsSummary.ignoredItems],
-    ['Protected Value', formatCurrencyValue(results.qsSummary.protectedValue)],
+    ['Protected Value', results.qsSummary.protectedValue > 0 ? 'Pending verified project valuation basis' : '-'],
     ['Formwork Alerts', results.qsSummary.formworkAlerts],
     ['Star Rate Candidates', breakdown.actions.filter((action) => action.action === 'Addition' && (Boolean(action.starRateCandidate) || action.rateStatus === 'forced-star-rate')).length],
     ['EOT Flags', results.qsSummary.eotFlags],
@@ -858,14 +862,29 @@ function buildDetailSheet(rows: VoCommercialAction[]) {
 
 export function exportVoSubstantiationWorkbook(results: VoComparisonResults, context: VoReportContext = {}) {
   const workbook = XLSX.utils.book_new();
+  const hasUserBqPricing = hasVerifiedPricingContext(context.pricingContext);
   const breakdown = buildRows(results, context.pricingContext);
+  const valuationReady = hasUserBqPricing
+    && breakdown.actions.length > 0
+    && breakdown.actions.every((row) => row.rateStatus === 'rated');
+  const outputRows = breakdown.actions.map((row) => ({
+      ...row,
+      ...(hasUserBqPricing ? {} : {
+        rate: undefined,
+        amount: undefined,
+        rateStatus: 'pending' as const,
+        pricingSource: 'unmapped' as const,
+      }),
+      protectedValue: 0,
+      changes: row.changes.map((change) => ({ ...change, protectedValue: undefined })),
+    }));
 
-  XLSX.utils.book_append_sheet(workbook, buildCoverSheet(breakdown.actions, results, context), 'VO Cover Sheet');
-  XLSX.utils.book_append_sheet(workbook, buildSummarySheet(results, context.pricingContext), 'Summary');
-  XLSX.utils.book_append_sheet(workbook, buildStarRateRegister(breakdown.actions), 'Star Rate Register');
-  XLSX.utils.book_append_sheet(workbook, buildStarRateBuildUpSheet(breakdown.actions), 'Star Rate Build-up');
-  XLSX.utils.book_append_sheet(workbook, buildMappingRegisterSheet(breakdown.actions, context.pricingContext), 'BQ Mapping Register');
-  XLSX.utils.book_append_sheet(workbook, buildDetailSheet(breakdown.actions), 'VO Substantiation');
+  XLSX.utils.book_append_sheet(workbook, buildCoverSheet(outputRows, results, context, valuationReady), 'VO Cover Sheet');
+  XLSX.utils.book_append_sheet(workbook, buildSummarySheet(results, context.pricingContext, valuationReady), 'Summary');
+  XLSX.utils.book_append_sheet(workbook, buildStarRateRegister(outputRows), 'Star Rate Register');
+  XLSX.utils.book_append_sheet(workbook, buildStarRateBuildUpSheet(outputRows), 'Star Rate Build-up');
+  XLSX.utils.book_append_sheet(workbook, buildMappingRegisterSheet(outputRows, context.pricingContext), 'BQ Mapping Register');
+  XLSX.utils.book_append_sheet(workbook, buildDetailSheet(outputRows), 'VO Substantiation');
 
   const fileName = `vo-substantiation-${Date.now()}.xlsx`;
   XLSX.writeFile(workbook, fileName);

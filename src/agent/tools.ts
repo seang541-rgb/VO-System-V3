@@ -407,6 +407,16 @@ export const TOOL_GRAPH: ToolMeta[] = [
   { name: 'ocr_document',             requires: [],                produces: [] },
 ];
 
+const STABLE_TOOL_NAMES = new Set([
+  'query_ifc',
+  'compare_ifc',
+  'summarize_commercial_impact',
+  'audit_ifc',
+  'ocr_document',
+  'export_vo_excel',
+  'generate_report',
+]);
+
 function resolveAvailableCapabilities(ctx: ToolContext): Set<string> {
   const caps = new Set<string>();
   if (ctx.baseComponents.length > 0) caps.add('base_loaded');
@@ -422,6 +432,7 @@ export function getAvailableTools(ctx: ToolContext): typeof OPENAI_TOOL_DEFINITI
   const available = new Set<string>();
 
   for (const meta of TOOL_GRAPH) {
+    if (!STABLE_TOOL_NAMES.has(meta.name)) continue;
     const satisfied = meta.requires.every((r) => caps.has(r));
     if (satisfied) available.add(meta.name);
   }
@@ -436,6 +447,7 @@ export function buildToolRoutingHint(ctx: ToolContext): string {
   const caps = resolveAvailableCapabilities(ctx);
   const blocked: string[] = [];
   for (const meta of TOOL_GRAPH) {
+    if (!STABLE_TOOL_NAMES.has(meta.name)) continue;
     const missing = meta.requires.filter((r) => !caps.has(r));
     if (missing.length > 0) {
       blocked.push(`${meta.name} (needs: ${missing.join(', ')})`);
@@ -577,7 +589,8 @@ export async function executeAgentTool(
           formworkAlerts: results.qsSummary?.formworkAlerts ?? 0,
           eotFlags: results.qsSummary?.eotFlags ?? 0,
           starRateCandidates: results.qsSummary?.starRateCandidates ?? 0,
-          protectedValue: results.qsSummary?.protectedValue ?? 0,
+          protectedValue: null,
+          pricingNotice: 'Protected value requires verified user BQ/rate information.',
         },
         topModified: results.modified.slice(0, 10).map(summarizeModified),
         sampleAdded: results.added.slice(0, 5).map((c) => ({
@@ -605,7 +618,36 @@ export async function executeAgentTool(
         .sort((a, b) => Math.abs(b.amount ?? 0) - Math.abs(a.amount ?? 0))
         .slice(0, topN)
         .map(summarizeAction);
+      if (!ctx.bqContext || ctx.bqItems.length === 0) {
+        const {
+          additionValue: _additionValue,
+          omissionValue: _omissionValue,
+          netValue: _netValue,
+          ...quantitySummary
+        } = breakdown.summary;
+        return {
+          pricingStatus: 'requires_user_bq',
+          valuationNotice: 'Upload and verify the project BQ and rate information before any valuation conclusion.',
+          summary: {
+            ...quantitySummary,
+            ratedActions: 0,
+            pendingRateActions: actions.length,
+          },
+          qsSummary: {
+            ...ctx.voResults.qsSummary,
+            protectedValue: null,
+          },
+          topActions: top.map((action) => ({
+            ...action,
+            rate: null,
+            amount: null,
+            rateStatus: 'pending',
+            pricingSource: 'unverified',
+          })),
+        };
+      }
       return {
+        pricingStatus: 'verified_user_bq',
         summary: breakdown.summary,
         qsSummary: ctx.voResults.qsSummary,
         topActions: top,

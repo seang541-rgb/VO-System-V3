@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { formatCurrencyValue, formatSignedCurrencyValue } from '../lib/format';
+import { formatSignedCurrencyValue } from '../lib/format';
 
 interface KPIGridProps {
   totalChanges: number;
@@ -9,6 +9,7 @@ interface KPIGridProps {
   totalNetValue: number;
   totalPendingRates: number;
   totalProtectedValue: number;
+  valuationReady: boolean;
   // Secondary (collapsible)
   rawModified: number;
   totalRatedActions: number;
@@ -48,9 +49,9 @@ export default function KPIGrid(props: KPIGridProps) {
         <KPICard label="Total Changes" value={props.totalChanges} />
         <KPICard label="VO Omissions" value={props.totalCommercialOmissions} borderColor="border-red-500/30" labelColor="text-red-400" valueColor="text-red-300" />
         <KPICard label="VO Additions" value={props.totalCommercialAdditions} borderColor="border-green-500/30" labelColor="text-green-400" valueColor="text-green-300" />
-        <KPICard label="Net Rated Value" value={formatSignedCurrencyValue(props.totalNetValue)} borderColor="border-blue-500/30" labelColor="text-blue-400" valueColor="text-blue-300" />
+        <KPICard label="Net Rated Value" value={props.valuationReady ? formatSignedCurrencyValue(props.totalNetValue) : 'Pending'} borderColor="border-blue-500/30" labelColor="text-blue-400" valueColor="text-blue-300" />
         <KPICard label="Pending Rates" value={props.totalPendingRates} borderColor="border-amber-500/30" labelColor="text-amber-400" valueColor="text-amber-300" />
-        <KPICard label="Protected Value" value={formatCurrencyValue(props.totalProtectedValue)} borderColor="border-amber-500/30" labelColor="text-slate-500" valueColor="text-amber-300" />
+        <KPICard label="Protected Value" value={props.totalProtectedValue > 0 ? 'Pending' : '-'} borderColor="border-amber-500/30" labelColor="text-slate-500" valueColor="text-amber-300" />
       </div>
 
       {/* Expand toggle */}

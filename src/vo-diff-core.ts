@@ -1172,16 +1172,6 @@ function resolveCommercialMeasurement(
   return { measurement: chooseDefaultMeasurement(component) };
 }
 
-function resolveCommercialRateRule(component: BimComponent, measurement: CommercialMeasurement, options: { preferFormwork?: boolean } = {}) {
-  if (options.preferFormwork) {
-    const formworkRule = PROJECT_QS_OVERRIDES.commercialRateRules.find((rule) => rule.id === 'formwork-rate' && matchesCommercialRateRule(rule, component) && rule.unit === measurement.unit);
-    if (formworkRule) return formworkRule;
-  }
-
-  return PROJECT_QS_OVERRIDES.commercialRateRules.find((rule) => matchesCommercialRateRule(rule, component) && rule.unit === measurement.unit);
-}
-
-
 function resolveBqRateOverride(component: BimComponent, measurement: CommercialMeasurement, bqContext?: BqMappingContext) {
   if (!bqContext) return null;
   const labelKey = component.qsLabel || component.name || component.type;
@@ -1265,8 +1255,7 @@ function buildCommercialAction(params: { id: string; action: VoCommercialActionT
   const preferFormwork = params.action === 'Addition' && Boolean(params.formworkAlert || mergedStarRateCandidate) && params.component.smm2SectionCode === 'F';
   const { measurement, rule } = resolveCommercialMeasurement(params.component, { preferFormwork });
   const bqRate = resolveBqRateOverride(params.component, measurement, params.bqContext);
-  const projectRateRule = forcedStarRate || bqRate ? null : resolveCommercialRateRule(params.component, measurement, { preferFormwork });
-  const effectiveRate = forcedStarRate ? undefined : (bqRate?.rate ?? projectRateRule?.rate);
+  const effectiveRate = forcedStarRate ? undefined : bqRate?.rate;
   const amount = typeof effectiveRate === 'number' ? measurement.quantity * effectiveRate * (params.action === 'Omission' ? -1 : 1) : undefined;
   return {
     ...params,
@@ -1280,14 +1269,14 @@ function buildCommercialAction(params: { id: string; action: VoCommercialActionT
     measurementRuleId: rule?.id,
     measurementRuleLabel: rule?.label,
     quantityRisk: measurement.risk,
-    pricingSource: forcedStarRate ? 'forced-star-rate' : (bqRate?.pricingSource ?? (projectRateRule ? 'project-rate' : 'unmapped')),
+    pricingSource: forcedStarRate ? 'forced-star-rate' : (bqRate?.pricingSource ?? 'unmapped'),
     bqItemReference: bqRate?.bqItemReference,
     bqDescription: bqRate?.bqDescription,
-    rateStatus: forcedStarRate ? 'forced-star-rate' : (bqRate?.rateStatus ?? (projectRateRule ? 'rated' : 'pending')), 
+    rateStatus: forcedStarRate ? 'forced-star-rate' : (bqRate?.rateStatus ?? 'pending'),
     rate: effectiveRate,
     amount,
-    rateRuleId: forcedStarRate ? 'forced-star-rate' : (bqRate?.rateRuleId ?? projectRateRule?.id),
-    rateLabel: forcedStarRate ? 'Item Not Found in BQ - Forced Star Rate' : (bqRate?.rateLabel ?? projectRateRule?.label ?? 'Project rate required'),
+    rateRuleId: forcedStarRate ? 'forced-star-rate' : bqRate?.rateRuleId,
+    rateLabel: forcedStarRate ? 'Item Not Found in BQ - Forced Star Rate' : (bqRate?.rateLabel ?? 'User BQ rate required'),
   };
 }
 
