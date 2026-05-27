@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Sparkles, Send, RefreshCw, Wrench, Loader2, Brain, Plus, MessageSquare, ChevronDown, UserCog, Lightbulb, X, ShieldCheck, FileCheck2 } from 'lucide-react';
 import { AgentSession, type AgentEvent, type OpenAIMessage, type ExtractedMemory } from '../agent/agent-client';
 import type { ToolContext } from '../agent/tools';
@@ -24,12 +25,7 @@ interface CopilotPanelProps {
   onCreditsUpdate?: (balance: number) => void;
 }
 
-const SAMPLE_PROMPTS = [
-  '帮我对比 base 同 revision 两个 IFC，总结主要差异',
-  'List the top 10 omissions and additions with amounts',
-  'Base 模型里面有几多道 IfcWall？',
-  '生成 VO Excel workbook',
-];
+// Sample prompts are now i18n keys — resolved in the component body
 
 function newId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -40,6 +36,10 @@ function truncate(str: string, n = 400) {
 }
 
 export default function CopilotPanel({ toolContext, signedIn, projectId, userId, onCreditsUpdate }: CopilotPanelProps) {
+  const { t } = useTranslation();
+  const samplePrompts = useMemo(() => [
+    t('copilot.prompt1'), t('copilot.prompt2'), t('copilot.prompt3'), t('copilot.prompt4'),
+  ], [t]);
   const sessionRef = useRef<AgentSession | null>(null);
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
@@ -131,7 +131,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
       const trimmed = text.trim();
       if (!trimmed || busy) return;
       if (!signedIn) {
-        pushEntry({ id: newId(), kind: 'error', text: '请先登录再使用 Copilot。' });
+        pushEntry({ id: newId(), kind: 'error', text: t('copilot.loginRequired') });
         return;
       }
       if (!sessionRef.current) sessionRef.current = new AgentSession(toolContext);
@@ -156,7 +156,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
             break;
           case 'thinking':
             setAgentStep(event.step);
-            if (event.text) pushEntry({ id: newId(), kind: 'thinking', text: event.text, meta: `Step ${event.step}` });
+            if (event.text) pushEntry({ id: newId(), kind: 'thinking', text: event.text, meta: `${t('copilot.stepLabel')} ${event.step}` });
             break;
           case 'tool_start':
             setActiveToolLabel(event.name);
@@ -260,7 +260,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
       await createConv('Autonomous VO Report Pack');
     }
 
-    pushEntry({ id: newId(), kind: 'user', text: 'Run Autonomous VO Report Pack' });
+    pushEntry({ id: newId(), kind: 'user', text: t('copilot.runVoPack') });
     setBusy(true);
     setActiveToolLabel(null);
     setAgentStep(0);
@@ -272,7 +272,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
             break;
           case 'thinking':
             setAgentStep(event.step);
-            pushEntry({ id: newId(), kind: 'thinking', text: event.text, meta: `Step ${event.step}/${event.totalSteps ?? '?'}` });
+            pushEntry({ id: newId(), kind: 'thinking', text: event.text, meta: `${t('copilot.stepLabel')} ${event.step}/${event.totalSteps ?? '?'}` });
             break;
           case 'tool_start':
             setActiveToolLabel(event.name);
@@ -334,12 +334,12 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
 
   const statusLine = useMemo(() => {
     const parts = [
-      `Base IFC: ${baseReady ? `${toolContext.baseComponents.length} components` : 'not loaded'}`,
-      `Revision IFC: ${revReady ? `${toolContext.revisionComponents.length} components` : 'not loaded'}`,
-      `Comparison: ${compareReady ? 'cached' : 'not run'}`,
+      `${t('copilot.baseIfc')}: ${baseReady ? `${toolContext.baseComponents.length} ${t('copilot.components')}` : t('sidebar.notLoaded')}`,
+      `${t('copilot.revisionIfc')}: ${revReady ? `${toolContext.revisionComponents.length} ${t('copilot.components')}` : t('sidebar.notLoaded')}`,
+      `${t('copilot.comparison')}: ${compareReady ? t('copilot.cached') : t('copilot.notRun')}`,
     ];
     return parts.join(' · ');
-  }, [baseReady, compareReady, revReady, toolContext.baseComponents.length, toolContext.revisionComponents.length]);
+  }, [baseReady, compareReady, revReady, toolContext.baseComponents.length, toolContext.revisionComponents.length, t]);
 
   return (
     <div className="flex h-full min-h-[28rem] flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/80">
@@ -348,7 +348,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-blue-400" />
             <div>
-              <div className="text-sm font-bold uppercase tracking-[0.18em] text-blue-400">IFC Copilot</div>
+              <div className="text-sm font-bold uppercase tracking-[0.18em] text-blue-400">{t('copilot.title')}</div>
               <div className="text-[11px] text-slate-400">{statusLine}</div>
             </div>
           </div>
@@ -361,7 +361,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
               className="inline-flex items-center gap-1 rounded-lg border border-blue-500/40 bg-blue-500/10 px-2 py-1.5 text-xs text-blue-300 hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
             >
               <FileCheck2 className="h-3 w-3" />
-              VO Pack
+              {t('copilot.voPack')}
             </button>
             {/* Role selector */}
             <div className="relative">
@@ -369,7 +369,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
                 type="button"
                 onClick={() => setShowRoleMenu((v) => !v)}
                 disabled={busy}
-                title={activeRole ? `Role: ${activeRole.nameCn}` : 'Select role'}
+                title={activeRole ? `${t('copilot.roleLabel')}: ${activeRole.nameCn}` : t('copilot.selectRole')}
                 className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs disabled:opacity-50 ${
                   activeRole
                     ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300 hover:border-emerald-400'
@@ -387,7 +387,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
                       onClick={() => { setActiveRole(null); setShowRoleMenu(false); }}
                       className="mb-1 w-full rounded-lg px-3 py-2 text-left text-xs text-slate-400 hover:bg-slate-800 hover:text-white"
                     >
-                      ✕ 清除角色
+                      ✕ {t('copilot.clearRole')}
                     </button>
                   )}
                   {AGENT_ROLES.map((role) => (
@@ -412,7 +412,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
               type="button"
               onClick={() => void handleNewConversation()}
               disabled={busy}
-              title="New conversation"
+              title={t('copilot.newConversation')}
               className="inline-flex items-center gap-1 rounded-lg border border-slate-600 bg-slate-800 px-2 py-1.5 text-xs text-slate-300 hover:border-blue-500/50 hover:text-blue-300 disabled:opacity-50"
             >
               <Plus className="h-3 w-3" />
@@ -462,7 +462,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
                     type="button"
                     onClick={(e) => { e.stopPropagation(); void removeConv(c.id); }}
                     className="ml-2 text-slate-600 hover:text-red-400"
-                    title="Delete"
+                    title={t('copilot.deleteConversation')}
                   >
                     ×
                   </button>
@@ -478,18 +478,18 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
             <div className="min-w-0 flex-1">
-              <div className="text-xs font-bold uppercase tracking-[0.16em] text-amber-300">Approval Required</div>
+              <div className="text-xs font-bold uppercase tracking-[0.16em] text-amber-300">{t('copilot.approvalRequired')}</div>
               <div className="mt-1 text-sm text-slate-100">
-                Copilot wants to execute <span className="font-mono text-amber-200">{pendingApproval.actionType}</span>.
+                {t('copilot.approvalWantsExec')} <span className="font-mono text-amber-200">{pendingApproval.actionType}</span>.
               </div>
               <div className="mt-1 text-xs text-slate-400">
                 {recoveredApprovalNeedsResult
-                  ? 'Loading the latest saved comparison before this approved output can resume.'
+                  ? t('copilot.approvalLoadingComparison')
                   : pendingApproval.status === 'approved'
-                    ? 'The formal output is approved and ready to resume execution.'
+                    ? t('copilot.approvalReady')
                   : pendingApproval.recovered
-                  ? 'This interrupted task is waiting for your recorded decision. Approval resumes the output.'
-                  : 'This creates a formal downloadable output. The decision is recorded in the run ledger.'}
+                  ? t('copilot.approvalWaiting')
+                  : t('copilot.approvalNote')}
               </div>
               <div className="mt-3 flex gap-2">
                 <button
@@ -498,7 +498,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
                   disabled={(pendingApproval.recovered && busy) || recoveredApprovalNeedsResult}
                   className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-50"
                 >
-                  {pendingApproval.status === 'approved' ? 'Resume Output' : 'Approve Output'}
+                  {pendingApproval.status === 'approved' ? t('copilot.resumeOutput') : t('copilot.approveOutput')}
                 </button>
                 {pendingApproval.status === 'pending' && (
                   <button
@@ -507,7 +507,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
                     disabled={pendingApproval.recovered && busy}
                     className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-700 disabled:opacity-50"
                   >
-                    Reject
+                    {t('copilot.reject')}
                   </button>
                 )}
               </div>
@@ -520,7 +520,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
         <div className="border-b border-slate-700/70 bg-slate-900 px-4 py-2">
           <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
             <ShieldCheck className="h-3 w-3" />
-            Recent Agent Runs
+            {t('copilot.recentRuns')}
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
             {runs.slice(0, 3).map((run) => (
@@ -546,13 +546,13 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
         {entries.length === 0 && (
           <div className="space-y-3">
             <div className="rounded-xl border border-slate-700/50 bg-slate-800/60 p-4 text-sm text-slate-300">
-              <div className="font-semibold text-blue-400">你好，我系 VO System 内嵌嘅 IFC Copilot。</div>
+              <div className="font-semibold text-blue-400">{t('copilot.welcomeTitle')}</div>
               <div className="mt-1 text-xs text-slate-400">
-                上传 base / revision IFC 后可以叫我对比、总结商业影响、或直接生成 Excel。每次对话会消耗 1 个 credit。
+                {t('copilot.welcomeBody')}
               </div>
             </div>
             <div className="grid gap-2 md:grid-cols-2">
-              {SAMPLE_PROMPTS.map((prompt) => (
+              {samplePrompts.map((prompt) => (
                 <button
                   key={prompt}
                   type="button"
@@ -570,7 +570,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
         {suggestions.length > 0 && !busy && (
           <div className="space-y-2">
             <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-400/80">
-              <Lightbulb className="h-3 w-3" /> 建议操作
+              <Lightbulb className="h-3 w-3" /> {t('copilot.suggestedActions')}
             </div>
             {suggestions.slice(0, 3).map((s) => (
               <div
@@ -595,14 +595,14 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
                       }}
                       className="rounded-lg bg-blue-600/80 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-500"
                     >
-                      执行
+                      {t('copilot.send')}
                     </button>
                   )}
                   <button
                     type="button"
                     onClick={() => setDismissedSuggestions((prev) => new Set([...prev, s.id]))}
                     className="rounded p-0.5 text-slate-600 hover:text-slate-300"
-                    title="Dismiss"
+                    title={t('copilot.dismiss')}
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -637,8 +637,8 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
                 <details className="w-full max-w-[85%] rounded-xl border border-purple-500/30 bg-purple-500/5 px-3 py-1.5 text-xs">
                   <summary className="flex cursor-pointer items-center gap-2 text-purple-300">
                     <Brain className="h-3 w-3" />
-                    <span className="font-semibold">{entry.meta ?? 'Thinking'}</span>
-                    <span className="text-slate-500">— Agent 推理中</span>
+                    <span className="font-semibold">{entry.meta ?? t('copilot.thinkingLabel')}</span>
+                    <span className="text-slate-500">— {t('copilot.agentReasoning')}</span>
                   </summary>
                   <div className="mt-2 whitespace-pre-wrap text-slate-300">{entry.text}</div>
                 </details>
@@ -676,13 +676,13 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
             <div className="flex-1">
               <div className="text-xs font-semibold text-blue-300">
                 {activeToolLabel
-                  ? `Step ${agentStep} · 正在执行: ${activeToolLabel}`
+                  ? `${t('copilot.stepLabel')} ${agentStep} · ${t('copilot.executing')} ${activeToolLabel}`
                   : agentStep > 0
-                    ? `Step ${agentStep} · Agent 推理中…`
-                    : 'Copilot 正在思考…'}
+                    ? `${t('copilot.stepLabel')} ${agentStep} · ${t('copilot.agentThinking')}`
+                    : t('copilot.thinking')}
               </div>
               <div className="mt-0.5 text-[11px] text-slate-500">
-                {activeToolLabel ? '工具调用中，请稍候' : '分析任务并规划执行步骤'}
+                {activeToolLabel ? t('copilot.toolRunning') : t('copilot.planningSteps')}
               </div>
             </div>
           </div>
@@ -707,7 +707,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
               }
             }}
             rows={2}
-            placeholder={signedIn ? '输入问题或指令… (Enter 发送, Shift+Enter 换行)' : '请先登录'}
+            placeholder={signedIn ? t('copilot.placeholder') : t('copilot.loginRequired')}
             disabled={busy || !signedIn}
             className="flex-1 resize-none rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-blue-600/60 focus:outline-none disabled:opacity-60"
           />
@@ -716,11 +716,11 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
             disabled={busy || !signedIn || !input.trim()}
             className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Send className="h-4 w-4" /> 发送
+            <Send className="h-4 w-4" /> {t('copilot.send')}
           </button>
         </div>
         <div className="mt-2 text-[11px] text-slate-500">
-          每次对话消耗 1 个 credit（与 Excel 导出共用同一余额）。
+          {t('copilot.creditNote')}
         </div>
       </form>
     </div>

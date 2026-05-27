@@ -124,16 +124,16 @@ export default function ProjectSidebar({
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t('status.baseIfc')}</div>
               {baseState === 'loading' ? (
                 <>
-                  <div className="truncate text-xs text-blue-300">{baseFile?.label ?? 'Loading...'}</div>
+                  <div className="truncate text-xs text-blue-300">{baseFile?.label ?? t('common.loading')}</div>
                   <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-700">
                     <div className="h-full animate-[loading-bar_2s_ease-in-out_infinite] rounded-full bg-blue-500" style={{ width: '60%' }} />
                   </div>
-                  <div className="mt-0.5 text-[10px] text-blue-400">解析 IFC 构件中…</div>
+                  <div className="mt-0.5 text-[10px] text-blue-400">{t('sidebar.parsingIfc')}</div>
                 </>
               ) : (
                 <>
                   <div className={`truncate text-xs ${baseComponentCount > 0 ? 'text-white' : baseState === 'error' ? 'text-red-300' : 'text-slate-400'}`}>
-                    {baseFile ? baseFile.label : 'Not loaded · click to upload'}
+                    {baseFile ? baseFile.label : t('sidebar.notLoaded')}
                   </div>
                   {baseComponentCount > 0 && (
                     <div className="text-[10px] text-slate-500">{baseComponentCount} {t('common.components')}</div>
@@ -169,16 +169,16 @@ export default function ProjectSidebar({
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t('status.revisionIfc')}</div>
               {revisionState === 'loading' ? (
                 <>
-                  <div className="truncate text-xs text-blue-300">{revisionFile?.label ?? 'Loading...'}</div>
+                  <div className="truncate text-xs text-blue-300">{revisionFile?.label ?? t('common.loading')}</div>
                   <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-700">
                     <div className="h-full animate-[loading-bar_2s_ease-in-out_infinite] rounded-full bg-blue-500" style={{ width: '60%' }} />
                   </div>
-                  <div className="mt-0.5 text-[10px] text-blue-400">解析 IFC 构件中…</div>
+                  <div className="mt-0.5 text-[10px] text-blue-400">{t('sidebar.parsingIfc')}</div>
                 </>
               ) : (
                 <>
                   <div className={`truncate text-xs ${revisionComponentCount > 0 ? 'text-white' : revisionState === 'error' ? 'text-red-300' : 'text-slate-400'}`}>
-                    {revisionFile ? revisionFile.label : 'Not loaded · click to upload'}
+                    {revisionFile ? revisionFile.label : t('sidebar.notLoaded')}
                   </div>
                   {revisionComponentCount > 0 && (
                     <div className="text-[10px] text-slate-500">{revisionComponentCount} {t('common.components')}</div>
@@ -199,11 +199,11 @@ export default function ProjectSidebar({
           >
             <FileSpreadsheet className={`h-4 w-4 ${bqItemCount > 0 ? 'text-emerald-400' : 'text-slate-500'}`} />
             <div className="flex-1 overflow-hidden">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Awarded BQ</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t('sidebar.awardedBq')}</div>
               <div className={`truncate text-xs ${bqItemCount > 0 ? 'text-white' : 'text-slate-400'}`}>
-                {bqFileName || 'Built-in Test BQ Library'}
+                {bqFileName || t('sidebar.notLoaded')}
               </div>
-              <div className="text-[10px] text-slate-500">{bqItemCount} line items ready</div>
+              <div className="text-[10px] text-slate-500">{bqItemCount} {t('sidebar.lineItemsReady')}</div>
             </div>
           </button>
         </div>
@@ -211,7 +211,7 @@ export default function ProjectSidebar({
 
       {/* Quick Actions */}
       <section>
-        <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Quick Actions</div>
+        <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{t('sidebar.quickActions')}</div>
         <div className="space-y-1.5">
           <button
             type="button"
@@ -225,8 +225,8 @@ export default function ProjectSidebar({
               <Zap className="h-4 w-4 flex-shrink-0" />
             )}
             <div className="flex-1 overflow-hidden">
-              <div className="text-xs font-semibold">{auditState === 'running' ? 'Auditing...' : t('workspace.runAudit')}</div>
-              <div className="truncate text-[10px] text-amber-200">快速算量</div>
+              <div className="text-xs font-semibold">{auditState === 'running' ? t('sidebar.auditing') : t('workspace.runAudit')}</div>
+              <div className="truncate text-[10px] text-amber-200">{t('sidebar.auditSubtitle')}</div>
             </div>
           </button>
 
@@ -239,7 +239,7 @@ export default function ProjectSidebar({
             <Play className="h-4 w-4 flex-shrink-0" />
             <div className="flex-1 overflow-hidden">
               <div className="text-xs font-semibold">{t('workspace.runCompare')}</div>
-              <div className="truncate text-[10px] text-blue-200">对比 base / revision</div>
+              <div className="truncate text-[10px] text-blue-200">{t('sidebar.voSubtitle')}</div>
             </div>
           </button>
 
@@ -251,8 +251,8 @@ export default function ProjectSidebar({
           >
             <Download className="h-4 w-4 flex-shrink-0 text-slate-500 group-hover:text-slate-300" />
             <div className="flex-1 overflow-hidden">
-              <div className="text-xs font-semibold">{isExporting ? 'Checking...' : t('workspace.exportExcel')}</div>
-              <div className="truncate text-[10px] text-slate-500">生成实证报告</div>
+              <div className="text-xs font-semibold">{isExporting ? t('sidebar.checking') : t('workspace.exportExcel')}</div>
+              <div className="truncate text-[10px] text-slate-500">{t('sidebar.exportSubtitle')}</div>
             </div>
           </button>
 
@@ -264,7 +264,7 @@ export default function ProjectSidebar({
             <FileText className="h-4 w-4 flex-shrink-0 text-slate-500 group-hover:text-slate-300" />
             <div className="flex-1 overflow-hidden">
               <div className="text-xs font-semibold">{t('workspace.bqTemplate')}</div>
-              <div className="truncate text-[10px] text-slate-500">下载模板</div>
+              <div className="truncate text-[10px] text-slate-500">{t('sidebar.bqSubtitle')}</div>
             </div>
           </button>
         </div>
@@ -272,7 +272,7 @@ export default function ProjectSidebar({
 
       {/* Views */}
       <section>
-        <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Views</div>
+        <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{t('sidebar.views')}</div>
         <div className="space-y-1">
           <button
             type="button"
@@ -280,7 +280,7 @@ export default function ProjectSidebar({
             className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${showCopilotTab ? 'bg-blue-600/20 text-blue-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
           >
             <Sparkles className={`h-3.5 w-3.5 flex-shrink-0 ${showCopilotTab ? 'text-blue-400' : 'text-slate-600'}`} />
-            <span className="text-xs font-semibold">IFC Copilot</span>
+            <span className="text-xs font-semibold">{t('sidebar.copilot')}</span>
           </button>
 
           <button
@@ -289,7 +289,7 @@ export default function ProjectSidebar({
             className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${showAuditTab ? 'bg-amber-600/20 text-amber-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
           >
             <BarChart3 className={`h-3.5 w-3.5 flex-shrink-0 ${showAuditTab ? 'text-amber-400' : 'text-slate-600'}`} />
-            <span className="text-xs font-semibold">Audit Report</span>
+            <span className="text-xs font-semibold">{t('sidebar.auditReport')}</span>
           </button>
 
           <button
@@ -298,7 +298,7 @@ export default function ProjectSidebar({
             className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${showOverviewTab ? 'bg-blue-600/20 text-blue-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
           >
             <Layers3 className={`h-3.5 w-3.5 flex-shrink-0 ${showOverviewTab ? 'text-blue-400' : 'text-slate-600'}`} />
-            <span className="text-xs font-semibold">3D Model &amp; Diff</span>
+            <span className="text-xs font-semibold">{t('sidebar.modelDiff')}</span>
           </button>
 
           <button
@@ -307,7 +307,7 @@ export default function ProjectSidebar({
             className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${showValuationTab ? 'bg-blue-600/20 text-blue-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
           >
             <ClipboardList className={`h-3.5 w-3.5 flex-shrink-0 ${showValuationTab ? 'text-blue-400' : 'text-slate-600'}`} />
-            <span className="text-xs font-semibold">BQ Mapping &amp; Valuation</span>
+            <span className="text-xs font-semibold">{t('sidebar.bqMapping')}</span>
           </button>
         </div>
       </section>
@@ -349,7 +349,7 @@ export default function ProjectSidebar({
                     {summary.modified > 0 && (
                       <span className="text-amber-400">~{summary.modified}</span>
                     )}
-                    <span className="ml-auto text-[10px] text-slate-500">{summary.totalChanges} changes</span>
+                    <span className="ml-auto text-[10px] text-slate-500">{summary.totalChanges} {t('voCase.changes')}</span>
                   </div>
                 </button>
               );
@@ -360,15 +360,15 @@ export default function ProjectSidebar({
 
       {/* Status */}
       <section className="mt-auto rounded-xl border border-slate-700 bg-slate-800/50 p-3">
-        <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Status</div>
+        <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{t('sidebar.status')}</div>
         <div className="space-y-1 text-[11px]">
           <div className="flex items-center justify-between">
             <span className="text-slate-400">{t('status.baseIfc')}</span>
             <span className="flex items-center gap-1">
               {baseState === 'loading' ? (
-                <><Loader2 className="h-3 w-3 animate-spin text-blue-400" /><span className="text-blue-400">解析中</span></>
+                <><Loader2 className="h-3 w-3 animate-spin text-blue-400" /><span className="text-blue-400">{t('sidebar.parsing')}</span></>
               ) : baseState === 'error' ? (
-                <><AlertCircle className="h-3 w-3 text-red-400" /><span className="text-red-400">Error</span></>
+                <><AlertCircle className="h-3 w-3 text-red-400" /><span className="text-red-400">{t('sidebar.error')}</span></>
               ) : baseComponentCount > 0 ? (
                 <><CheckCircle2 className="h-3 w-3 text-emerald-400" /><span className="text-emerald-400">{t('common.ready')}</span></>
               ) : (
@@ -380,9 +380,9 @@ export default function ProjectSidebar({
             <span className="text-slate-400">{t('status.revisionIfc')}</span>
             <span className="flex items-center gap-1">
               {revisionState === 'loading' ? (
-                <><Loader2 className="h-3 w-3 animate-spin text-blue-400" /><span className="text-blue-400">解析中</span></>
+                <><Loader2 className="h-3 w-3 animate-spin text-blue-400" /><span className="text-blue-400">{t('sidebar.parsing')}</span></>
               ) : revisionState === 'error' ? (
-                <><AlertCircle className="h-3 w-3 text-red-400" /><span className="text-red-400">Error</span></>
+                <><AlertCircle className="h-3 w-3 text-red-400" /><span className="text-red-400">{t('sidebar.error')}</span></>
               ) : revisionComponentCount > 0 ? (
                 <><CheckCircle2 className="h-3 w-3 text-emerald-400" /><span className="text-emerald-400">{t('common.ready')}</span></>
               ) : (
@@ -394,7 +394,7 @@ export default function ProjectSidebar({
             <span className="text-slate-400">{t('status.comparison')}</span>
             <span className="flex items-center gap-1">
               {voResults ? (
-                <><CheckCircle2 className="h-3 w-3 text-emerald-400" /><span className="text-emerald-400">Done</span></>
+                <><CheckCircle2 className="h-3 w-3 text-emerald-400" /><span className="text-emerald-400">{t('sidebar.done')}</span></>
               ) : (
                 <><Circle className="h-3 w-3 text-slate-600" /><span className="text-slate-500">{t('common.pending')}</span></>
               )}

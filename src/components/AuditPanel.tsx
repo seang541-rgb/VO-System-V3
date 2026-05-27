@@ -129,17 +129,17 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
       {/* KPI Grid */}
       <div className="border-b border-slate-800 px-4 py-3">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-          <KPI label="审计构件数" value={summary.recordCount} accent="text-white" />
-          <KPI label="JKR 分类数" value={summary.jkrCodeCount} accent="text-blue-300" />
-          <KPI label="算量模式" value={quantityModeUsed === 'compat' ? 'Qto Priority' : quantityModeUsed === 'mesh' ? 'Mesh' : quantityModeUsed} accent="text-emerald-300" />
-          <KPI label="耗时" value={`${durationSec}s`} accent="text-amber-300" />
-          <KPI label="Qto 覆盖率" value={`${qtoCoverage}%`} accent={qtoCoverage >= 70 ? 'text-emerald-300' : qtoCoverage >= 40 ? 'text-amber-300' : 'text-red-300'} />
+          <KPI label={t('audit.auditElements')} value={summary.recordCount} accent="text-white" />
+          <KPI label={t('audit.jkrCodes')} value={summary.jkrCodeCount} accent="text-blue-300" />
+          <KPI label={t('audit.qtyMode')} value={quantityModeUsed === 'compat' ? 'Qto Priority' : quantityModeUsed === 'mesh' ? 'Mesh' : quantityModeUsed} accent="text-emerald-300" />
+          <KPI label={t('audit.duration')} value={`${durationSec}s`} accent="text-amber-300" />
+          <KPI label={t('audit.qtoCoverage')} value={`${qtoCoverage}%`} accent={qtoCoverage >= 70 ? 'text-emerald-300' : qtoCoverage >= 40 ? 'text-amber-300' : 'text-red-300'} />
         </div>
       </div>
 
       {/* Main BQ Table */}
       <div className="px-4 py-4">
-        <div className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-blue-400">BQ 算量汇总</div>
+        <div className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-blue-400">{t('audit.bqSummary')}</div>
         <div className="overflow-auto rounded-xl border border-slate-700">
           <table className="w-full border-collapse text-left text-sm">
             <thead>
@@ -162,7 +162,7 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
                 </tr>
               ))}
               {bqRows.length === 0 && (
-                <tr><td colSpan={5} className="py-6 text-center text-slate-500">No audit records produced.</td></tr>
+                <tr><td colSpan={5} className="py-6 text-center text-slate-500">{t('audit.noRecords')}</td></tr>
               )}
             </tbody>
           </table>
@@ -176,7 +176,7 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
           onClick={() => setShowClassifications(!showClassifications)}
           className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs font-bold uppercase tracking-[0.16em] text-slate-400 hover:bg-slate-800 hover:text-slate-200"
         >
-          <span>分类详情 · Classifications ({summary.classifications.length})</span>
+          <span>{t('audit.classifications')} ({summary.classifications.length})</span>
           {showClassifications ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
         </button>
         {showClassifications && (
@@ -216,7 +216,7 @@ export default function AuditPanel({ auditResult, auditState, auditError, auditD
           onClick={() => setShowSources(!showSources)}
           className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs font-bold uppercase tracking-[0.16em] text-slate-400 hover:bg-slate-800 hover:text-slate-200"
         >
-          <span>数据源分析 · Quantity Sources ({summary.quantitySources.length})</span>
+          <span>{t('audit.qtySources')} ({summary.quantitySources.length})</span>
           {showSources ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
         </button>
         {showSources && (

@@ -13,31 +13,23 @@ export default function DashboardPage() {
   const cards = [
     {
       icon: BarChart3,
-      title: t('welcome.cardAudit', { defaultValue: '快速算量审计' }),
-      subtitle: t('welcome.cardAuditDesc', {
-        defaultValue: 'IFC Quantity Takeoff',
-      }),
+      title: t('welcome.cardAudit'),
+      subtitle: t('welcome.cardAuditDesc'),
     },
     {
       icon: GitCompareArrows,
-      title: t('welcome.cardCompare', { defaultValue: 'VO 对比分析' }),
-      subtitle: t('welcome.cardCompareDesc', {
-        defaultValue: 'Variation Order Diff',
-      }),
+      title: t('welcome.cardCompare'),
+      subtitle: t('welcome.cardCompareDesc'),
     },
     {
       icon: Bot,
-      title: t('welcome.cardCopilot', { defaultValue: 'AI Copilot' }),
-      subtitle: t('welcome.cardCopilotDesc', {
-        defaultValue: 'Smart Analysis Agent',
-      }),
+      title: t('welcome.cardCopilot'),
+      subtitle: t('welcome.cardCopilotDesc'),
     },
     {
       icon: FileOutput,
-      title: t('welcome.cardExport', { defaultValue: '导出报告' }),
-      subtitle: t('welcome.cardExportDesc', {
-        defaultValue: 'Excel & PDF Export',
-      }),
+      title: t('welcome.cardExport'),
+      subtitle: t('welcome.cardExportDesc'),
     },
   ];
 
@@ -61,17 +53,13 @@ export default function DashboardPage() {
             {t('app.name')}
           </h1>
           <p className="text-sm text-slate-400">
-            {t('welcome.subtitle', {
-              defaultValue: 'IFC 智能分析平台',
-            })}
+            {t('welcome.subtitle')}
           </p>
         </div>
 
         {/* Greeting */}
         <p className="text-base text-slate-300">
-          {t('welcome.title', {
-            defaultValue: '你好！需要什么帮助？',
-          })}
+          {t('welcome.title')}
         </p>
 
         {/* Suggestion cards — 2x2 grid */}

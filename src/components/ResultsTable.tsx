@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import type { VoCommercialAction } from '../BimEngine';
 
 export interface ResultRow {
@@ -53,14 +54,15 @@ export default function ResultsTable({
   resultRows, selectedRowKey, onRowClick,
   scrollRef, scrollbarRef, scrollbarInnerRef,
 }: ResultsTableProps) {
+  const { t } = useTranslation();
   return (
     <>
       <div className="border-b border-slate-800 px-4 py-2 text-xs text-slate-500">
-        Commercial output now forces every technical modification into Omission + Addition rows. Each commercial row now carries Qty, Unit, Rate, Amount, the exact measurement rule applied, and the quantity source used. Quantity normalization now follows a strict fallback chain: Qto first, geometry mesh calculation second, and BBox estimate last. Any BBox fallback is marked as high risk for manual QS verification. Contract BQ rates override provisional project rates only when a QS-mounted Item Reference exists and its unit matches the system measurement unit. Click a row to focus the affected element in 3D; modified omissions will focus the visible revision counterpart.
+        {t('results.description')}
       </div>
       <div className="border-b border-slate-800 px-4 py-3">
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-400">
-          Drag Horizontally Here To View Hidden Columns
+          {t('results.dragHint')}
         </div>
         <div ref={scrollbarRef} className="overflow-x-auto overflow-y-hidden rounded-full border border-slate-700 bg-slate-800/90">
           <div ref={scrollbarInnerRef} className="h-4 min-w-full" />
@@ -70,32 +72,32 @@ export default function ResultsTable({
         <table className="w-full border-collapse text-left text-sm">
           <thead>
             <tr className="border-b border-slate-700/60 text-xs uppercase tracking-[0.18em] text-slate-500">
-              <th className="w-[7%] px-3 py-2 font-bold">Section</th>
-              <th className="w-[10%] px-3 py-2 font-bold">Level</th>
-              <th className="w-[8%] px-3 py-2 font-bold">Block</th>
-              <th className="w-[8%] px-3 py-2 font-bold">Zone</th>
-              <th className="w-[10%] px-3 py-2 font-bold">Grid/Room</th>
-              <th className="w-[7%] px-3 py-2 font-bold">Loc Type</th>
-              <th className="w-[14%] px-3 py-2 font-bold">Host / Opening</th>
-              <th className="w-[9%] px-3 py-2 font-bold">Shield</th>
-              <th className="w-[10%] px-3 py-2 font-bold">Protected Qty</th>
-              <th className="w-[10%] px-3 py-2 font-bold">Protected Value</th>
-              <th className="w-[16%] px-3 py-2 font-bold">Formwork Alert</th>
-              <th className="w-[16%] px-3 py-2 font-bold">Star Rate</th>
-              <th className="w-[16%] px-3 py-2 font-bold">EOT Trigger</th>
-              <th className="w-[15%] px-3 py-2 font-bold">QS Description</th>
-              <th className="w-[11%] px-3 py-2 font-bold">Measure</th>
-              <th className="w-[14%] px-3 py-2 font-bold">Measure Rule</th>
-              <th className="w-[8%] px-3 py-2 font-bold">Qty Source</th>
-              <th className="w-[16%] px-3 py-2 font-bold">Qty Risk</th>
-              <th className="w-[8%] px-3 py-2 font-bold">Qty</th>
-              <th className="w-[6%] px-3 py-2 font-bold">Unit</th>
-              <th className="w-[10%] px-3 py-2 font-bold">Rate</th>
-              <th className="w-[10%] px-3 py-2 font-bold">Amount</th>
-              <th className="w-[7%] px-3 py-2 font-bold">VO Action</th>
-              <th className="w-[7%] px-3 py-2 font-bold">Tech Status</th>
-              <th className="w-[6%] px-3 py-2 font-bold">QS Impact</th>
-              <th className="pb-2 font-bold uppercase">Details</th>
+              <th className="w-[7%] px-3 py-2 font-bold">{t('results.section')}</th>
+              <th className="w-[10%] px-3 py-2 font-bold">{t('results.level')}</th>
+              <th className="w-[8%] px-3 py-2 font-bold">{t('results.block')}</th>
+              <th className="w-[8%] px-3 py-2 font-bold">{t('results.zone')}</th>
+              <th className="w-[10%] px-3 py-2 font-bold">{t('results.gridRoom')}</th>
+              <th className="w-[7%] px-3 py-2 font-bold">{t('results.locType')}</th>
+              <th className="w-[14%] px-3 py-2 font-bold">{t('results.hostOpening')}</th>
+              <th className="w-[9%] px-3 py-2 font-bold">{t('results.shield')}</th>
+              <th className="w-[10%] px-3 py-2 font-bold">{t('results.protectedQty')}</th>
+              <th className="w-[10%] px-3 py-2 font-bold">{t('results.protectedValue')}</th>
+              <th className="w-[16%] px-3 py-2 font-bold">{t('results.formworkAlert')}</th>
+              <th className="w-[16%] px-3 py-2 font-bold">{t('results.starRate')}</th>
+              <th className="w-[16%] px-3 py-2 font-bold">{t('results.eotTrigger')}</th>
+              <th className="w-[15%] px-3 py-2 font-bold">{t('results.qsDescription')}</th>
+              <th className="w-[11%] px-3 py-2 font-bold">{t('results.measure')}</th>
+              <th className="w-[14%] px-3 py-2 font-bold">{t('results.measureRule')}</th>
+              <th className="w-[8%] px-3 py-2 font-bold">{t('results.qtySource')}</th>
+              <th className="w-[16%] px-3 py-2 font-bold">{t('results.qtyRisk')}</th>
+              <th className="w-[8%] px-3 py-2 font-bold">{t('results.qty')}</th>
+              <th className="w-[6%] px-3 py-2 font-bold">{t('results.unit')}</th>
+              <th className="w-[10%] px-3 py-2 font-bold">{t('results.rate')}</th>
+              <th className="w-[10%] px-3 py-2 font-bold">{t('results.amount')}</th>
+              <th className="w-[7%] px-3 py-2 font-bold">{t('results.voAction')}</th>
+              <th className="w-[7%] px-3 py-2 font-bold">{t('results.techStatus')}</th>
+              <th className="w-[6%] px-3 py-2 font-bold">{t('results.qsImpact')}</th>
+              <th className="pb-2 font-bold uppercase">{t('results.details')}</th>
             </tr>
           </thead>
           <tbody className="font-mono text-slate-300">
@@ -135,7 +137,7 @@ export default function ResultsTable({
               </tr>
             ))}
             {resultRows.length === 0 && (
-              <tr><td colSpan={26} className="py-4 text-center text-slate-500">Comparison ran successfully. No variations were detected.</td></tr>
+              <tr><td colSpan={26} className="py-4 text-center text-slate-500">{t('results.noVariations')}</td></tr>
             )}
           </tbody>
         </table>

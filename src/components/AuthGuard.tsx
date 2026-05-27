@@ -1,8 +1,10 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../auth/AuthProvider';
 import LoginPage from '../pages/LoginPage';
 
 export default function AuthGuard({ children, allowLocal = false }: { children: React.ReactNode; allowLocal?: boolean }) {
+  const { t } = useTranslation();
   const { session, loading } = useAuth();
 
   if (allowLocal) return <>{children}</>;
@@ -11,7 +13,7 @@ export default function AuthGuard({ children, allowLocal = false }: { children: 
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-900 text-slate-300">
         <div className="rounded-2xl border border-slate-700/50 bg-slate-800/80 px-6 py-5 text-sm font-semibold uppercase tracking-[0.2em] text-blue-400">
-          Initializing secure session...
+          {t('login.initSession')}
         </div>
       </div>
     );

@@ -132,13 +132,13 @@ export default function ModelViewer({
         {/* Active state badges */}
         {isMeasuring && (
           <div className="flex items-center gap-1.5 rounded-lg bg-blue-600/90 px-3 py-1.5 text-xs font-medium text-white backdrop-blur">
-            <Ruler size={12} /> Measuring — click two points
+            <Ruler size={12} /> {t('viewer.measuring')}
             <button onClick={onClearMeasurements} className="ml-1 rounded p-0.5 hover:bg-blue-500"><X size={12} /></button>
           </div>
         )}
         {isIsolationActive && (
           <div className="flex items-center gap-1.5 rounded-lg bg-amber-600/90 px-3 py-1.5 text-xs font-medium text-white backdrop-blur">
-            Isolation Mode
+            {t('viewer.isolationMode')}
             <button onClick={onClearIsolation} className="ml-1 rounded p-0.5 hover:bg-amber-500"><X size={12} /></button>
           </div>
         )}
@@ -149,7 +149,7 @@ export default function ModelViewer({
             onClick={() => setToolsPanelOpen(!toolsPanelOpen)}
             className="flex w-full items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-slate-300 hover:text-white"
           >
-            <span>3D Tools</span>
+            <span>{t('viewer.tools3d')}</span>
             {toolsPanelOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
           </button>
 
@@ -159,14 +159,14 @@ export default function ModelViewer({
               {storeys.length > 0 && (
                 <div className="flex flex-col gap-1">
                   <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                    <Layers size={10} /> Storey
+                    <Layers size={10} /> {t('viewer.storey')}
                   </label>
                   <select
                     value={activeStoreyFilter ?? ''}
                     onChange={(e) => onFilterStorey?.(e.target.value ? Number(e.target.value) : null)}
                     className="rounded-lg border border-slate-600 bg-slate-800 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-blue-500"
                   >
-                    <option value="">All Storeys</option>
+                    <option value="">{t('viewer.allStoreys')}</option>
                     {storeys.map((s) => (
                       <option key={s.id} value={s.id}>{s.name} ({s.elevation.toFixed(1)}m)</option>
                     ))}
@@ -181,7 +181,7 @@ export default function ModelViewer({
                     onClick={() => setTypeFilterOpen(!typeFilterOpen)}
                     className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500 hover:text-slate-300"
                   >
-                    <Filter size={10} /> Element Types
+                    <Filter size={10} /> {t('viewer.typeFilter')}
                     {activeTypeFilter && <span className="rounded bg-blue-600 px-1 py-0.5 text-[9px] text-white">{activeTypeFilter.length}</span>}
                   </button>
                   {typeFilterOpen && (
@@ -190,7 +190,7 @@ export default function ModelViewer({
                         onClick={() => onFilterType?.(null)}
                         className="mb-1 w-full rounded px-2 py-1 text-left text-[10px] font-medium text-blue-400 hover:bg-slate-700"
                       >
-                        Show All
+                        {t('viewer.allTypes')}
                       </button>
                       {elementTypes.map((et) => (
                         <label key={et.typeCode} className="flex cursor-pointer items-center gap-1.5 rounded px-2 py-0.5 text-[10px] text-slate-300 hover:bg-slate-700">
@@ -210,7 +210,7 @@ export default function ModelViewer({
 
               {/* Clipping Slider */}
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Clip Height</label>
+                <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">{t('viewer.clipping')}</label>
                 <input
                   type="range"
                   min="0"
@@ -232,13 +232,13 @@ export default function ModelViewer({
                       : 'border border-slate-600 bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
                   }`}
                 >
-                  <Ruler size={12} /> Measure
+                  <Ruler size={12} /> {t('viewer.measurement')}
                 </button>
                 <button
                   onClick={onCaptureScreenshot}
                   className="flex-1 flex items-center justify-center gap-1 rounded-lg border border-slate-600 bg-slate-800 px-2 py-1.5 text-[10px] font-medium text-slate-300 transition hover:bg-slate-700 hover:text-white"
                 >
-                  <Camera size={12} /> Screenshot
+                  <Camera size={12} /> {t('viewer.screenshot')}
                 </button>
               </div>
             </div>

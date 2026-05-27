@@ -1,4 +1,5 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   BimComponent,
   BimEngine,
@@ -64,7 +65,8 @@ const CHECKOUT_BALANCE_STORAGE_KEY = 'vo-system:checkout-balance';
 const CHECKOUT_CREDIT_TOP_UP_AMOUNT = 50;
 
 export default function App({ localMode = false }: { localMode?: boolean }) {
-  const [sysLog, setSysLog] = useState('System Live. Awaiting IFC models and QS mapping.');
+  const { t } = useTranslation();
+  const [sysLog, setSysLog] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [v1File, setV1File] = useState<File | null>(null);
   const [v2File, setV2File] = useState<File | null>(null);
@@ -89,7 +91,7 @@ export default function App({ localMode = false }: { localMode?: boolean }) {
   });
   const [voResults, setVoResults] = useState<VoComparisonResults | null>(null);
   const [compareState, setCompareState] = useState<CompareState>('idle');
-  const [compareMessage, setCompareMessage] = useState('Load two IFC files, then run the comparison.');
+  const [compareMessage, setCompareMessage] = useState('');
   const [selectedRowKey, setSelectedRowKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>(localMode ? 'overview' : 'copilot');
   const [showLegacyBanner, setShowLegacyBanner] = useState(true);
@@ -118,6 +120,12 @@ export default function App({ localMode = false }: { localMode?: boolean }) {
   const resultsTableScrollRef = useRef<HTMLDivElement>(null);
   const resultsScrollbarRef = useRef<HTMLDivElement>(null);
   const resultsScrollbarInnerRef = useRef<HTMLDivElement>(null);
+
+  // Set initial translated messages
+  useEffect(() => {
+    setSysLog((prev) => prev || t('viewer.sysLive'));
+    setCompareMessage((prev) => prev || t('viewer.loadTwoIfc'));
+  }, [t]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -272,7 +280,7 @@ export default function App({ localMode = false }: { localMode?: boolean }) {
     setVoResults(null);
     setSelectedRowKey(null);
     setCompareState('idle');
-    setCompareMessage('Load two IFC files, then run the comparison.');
+    setCompareMessage(t('viewer.loadTwoIfc'));
   };
 
   const MAX_IFC_SIZE = 100 * 1024 * 1024; // 100 MB
@@ -283,8 +291,9 @@ export default function App({ localMode = false }: { localMode?: boolean }) {
 
     if (file.size > MAX_IFC_SIZE) {
       const setErr = version === 'v1' ? setV1Error : setV2Error;
-      setErr(`文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，上限 100MB`);
-      toast.error(`文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，上限 100MB`);
+      const sizeMsg = t('toast.fileTooLarge', { size: (file.size / 1024 / 1024).toFixed(1) });
+      setErr(sizeMsg);
+      toast.error(sizeMsg);
       e.target.value = '';
       return;
     }
@@ -322,13 +331,13 @@ export default function App({ localMode = false }: { localMode?: boolean }) {
       setState('ready');
       setActiveIfcSlot(version === 'v1' ? 'base' : 'revision');
       setSysLog(`${label} loaded: ${components.length} indexed elements.`);
-      toast.success(`${label} 加载完成 · ${components.length} 构件`);
+      toast.success(t('toast.loadComplete', { label, count: components.length }));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown parsing error';
       setState('error');
       setError(message);
       setSysLog(`Failed to parse ${label}: ${message}`);
-      toast.error(`${label} 加载失败`);
+      toast.error(t('toast.loadFailed', { label }));
     }
 
     e.target.value = '';
@@ -402,14 +411,14 @@ export default function App({ localMode = false }: { localMode?: boolean }) {
       setAuditResult(result);
       setAuditState('done');
       setSysLog(`Audit complete: ${result.records.length} elements in ${(duration / 1000).toFixed(1)}s`);
-      toast.success(`算量完成 · ${result.records.length} 构件 · ${(duration / 1000).toFixed(1)}s`);
+      toast.success(t('toast.auditDone', { count: result.records.length, time: (duration / 1000).toFixed(1) }));
     } catch (err) {
       setAuditDurationMs(performance.now() - t0);
       const message = err instanceof Error ? err.message : String(err);
       setAuditError(message);
       setAuditState('error');
       setSysLog(`Audit failed: ${message}`);
-      toast.error(`算量失败: ${message}`);
+      toast.error(t('toast.auditFailed', { msg: message }));
     }
   }, []);
 
@@ -447,14 +456,14 @@ export default function App({ localMode = false }: { localMode?: boolean }) {
       setSysLog(
         `VO Complete: ${results.added.length} Added, ${results.deleted.length} Deleted, ${results.modified.length} Modified. Commercial: ${commercial.summary.omissions} omissions, ${commercial.summary.additions} additions. Pending rates: ${commercial.summary.pendingRateActions}. Net rated value: ${formatSignedCurrencyValue(commercial.summary.netValue)}.`,
       );
-      toast.success('VO 对比完成');
+      toast.success(t('toast.voCompareDone'));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown comparison error';
       setVoResults(null);
       setCompareState('error');
       setCompareMessage(`Comparison failed: ${message}`);
       setSysLog(`VO Analysis Failed: ${message}`);
-      toast.error('VO 对比失败');
+      toast.error(t('toast.voCompareFailed'));
     }
 
     setIsRunning(false);
@@ -497,7 +506,7 @@ export default function App({ localMode = false }: { localMode?: boolean }) {
       setSysLog(localMode
         ? 'VO Excel generated locally.'
         : 'Premium VO Excel generated. One audit credit consumed from the secure cloud balance.');
-      toast.success('Excel 已导出');
+      toast.success(t('toast.excelExported'));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to validate cloud credits.';
       setBillingError(message);

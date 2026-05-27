@@ -73,7 +73,7 @@ export default function AppSidebar({
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t('sidebar.baseIfc')}</div>
               {v1State === 'loading' ? (
                 <>
-                  <div className="truncate text-xs text-blue-300">{v1File?.name ?? 'Loading...'}</div>
+                  <div className="truncate text-xs text-blue-300">{v1File?.name ?? t('common.loading')}</div>
                   <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-700">
                     <div className="h-full animate-[loading-bar_2s_ease-in-out_infinite] rounded-full bg-blue-500" style={{ width: '60%' }} />
                   </div>
@@ -96,7 +96,7 @@ export default function AppSidebar({
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t('sidebar.revisionIfc')}</div>
               {v2State === 'loading' ? (
                 <>
-                  <div className="truncate text-xs text-blue-300">{v2File?.name ?? 'Loading...'}</div>
+                  <div className="truncate text-xs text-blue-300">{v2File?.name ?? t('common.loading')}</div>
                   <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-700">
                     <div className="h-full animate-[loading-bar_2s_ease-in-out_infinite] rounded-full bg-blue-500" style={{ width: '60%' }} />
                   </div>

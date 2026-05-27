@@ -151,7 +151,7 @@ export default function SettingsPage() {
             onClick={() => setShowWebhookForm((v) => !v)}
             className="inline-flex items-center gap-1 rounded-lg border border-slate-600 px-2 py-1 text-[11px] text-slate-300 hover:border-blue-500/50 hover:text-blue-300"
           >
-            <Plus className="h-3 w-3" /> 新增
+            <Plus className="h-3 w-3" /> {t('settingsPage.addNew')}
           </button>
         </div>
 
@@ -192,13 +192,13 @@ export default function SettingsPage() {
               }}
               className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50"
             >
-              创建 Webhook
+              {t('settingsPage.createWebhook')}
             </button>
           </div>
         )}
 
         {webhooks.length === 0 && !showWebhookForm && (
-          <div className="text-[11px] text-slate-500">暂无 Webhook。点击「新增」添加一个接收项目事件通知的端点。</div>
+          <div className="text-[11px] text-slate-500">{t('settingsPage.noWebhooks')}</div>
         )}
 
         {webhooks.map((wh) => (
@@ -242,7 +242,7 @@ export default function SettingsPage() {
             onClick={() => setShowKeyForm((v) => !v)}
             className="inline-flex items-center gap-1 rounded-lg border border-slate-600 px-2 py-1 text-[11px] text-slate-300 hover:border-blue-500/50 hover:text-blue-300"
           >
-            <Plus className="h-3 w-3" /> 生成密钥
+            <Plus className="h-3 w-3" /> {t('settingsPage.generateKey')}
           </button>
         </div>
 
@@ -287,14 +287,14 @@ export default function SettingsPage() {
               }}
               className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50"
             >
-              生成 API Key
+              {t('settingsPage.createApiKey')}
             </button>
           </div>
         )}
 
         {revealedKey && (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-2">
-            <div className="text-[11px] font-semibold text-amber-300">⚠️ 密钥只显示一次，请立即复制保存</div>
+            <div className="text-[11px] font-semibold text-amber-300">{t('settingsPage.keyWarning')}</div>
             <div className="flex items-center gap-2">
               <code className="flex-1 rounded bg-black/30 px-3 py-1.5 font-mono text-xs text-amber-100">
                 {showRevealedKey ? revealedKey : '•'.repeat(40)}
@@ -320,13 +320,13 @@ export default function SettingsPage() {
               onClick={() => { setRevealedKey(null); setShowRevealedKey(false); }}
               className="text-[11px] text-slate-500 hover:text-slate-300"
             >
-              我已保存，关闭
+              {t('settingsPage.keySaved')}
             </button>
           </div>
         )}
 
         {apiKeys.length === 0 && !showKeyForm && !revealedKey && (
-          <div className="text-[11px] text-slate-500">暂无 API Key。生成一个密钥以通过 REST API 访问 VO System。</div>
+          <div className="text-[11px] text-slate-500">{t('settingsPage.noApiKeys')}</div>
         )}
 
         {apiKeys.map((k) => (

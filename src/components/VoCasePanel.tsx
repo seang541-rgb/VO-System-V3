@@ -2,6 +2,7 @@
 // 在 ProjectWorkspace 中作为一个 tab 使用
 
 import React, { useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useVoCases, useVoCase } from '../hooks/useVoCases';
 import type { OrchestratorAction } from '../agent/vo-case-types';
 import VoCaseList from './VoCaseList';
@@ -15,6 +16,7 @@ interface VoCasePanelProps {
 }
 
 export default function VoCasePanel({ projectId, userId, onSwitchToCopilot }: VoCasePanelProps) {
+  const { t } = useTranslation();
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
 
   // 列表数据
@@ -28,7 +30,7 @@ export default function VoCasePanel({ projectId, userId, onSwitchToCopilot }: Vo
   // 创建 Case
   const handleCreate = useCallback(
     async (title: string) => {
-      if (!userId) throw new Error('未登录');
+      if (!userId) throw new Error(t('copilot.loginRequired'));
       const newCase = await create(userId, title);
       setSelectedCaseId(newCase.id);
     },
@@ -53,7 +55,7 @@ export default function VoCasePanel({ projectId, userId, onSwitchToCopilot }: Vo
   if (!projectId) {
     return (
       <div className="py-12 text-center text-xs text-slate-500">
-        未选择项目
+        {t('voCase.noProject')}
       </div>
     );
   }

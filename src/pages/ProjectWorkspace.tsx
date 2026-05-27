@@ -437,8 +437,9 @@ export default function ProjectWorkspace() {
 
     if (file.size > MAX_IFC_SIZE) {
       const setErr = version === 'v1' ? setV1Error : setV2Error;
-      setErr(`文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，上限 100MB`);
-      toast.error(`文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，上限 100MB`);
+      const sizeMsg = t('toast.fileTooLarge', { size: (file.size / 1024 / 1024).toFixed(1) });
+      setErr(sizeMsg);
+      toast.error(sizeMsg);
       e.target.value = '';
       return;
     }
@@ -477,7 +478,7 @@ export default function ProjectWorkspace() {
       setActiveIfcSlot(version === 'v1' ? 'base' : 'revision');
       refreshViewerMetadata();
       setSysLog(`${label} loaded: ${components.length} indexed elements.`);
-      toast.success(`${label} 加载完成 · ${components.length} 构件`);
+      toast.success(t('toast.loadComplete', { label, count: components.length }));
 
       // Save to project if authenticated
       if (user && projectId) {
@@ -501,7 +502,7 @@ export default function ProjectWorkspace() {
       setState('error');
       setError(message);
       setSysLog(`Failed to parse ${label}: ${message}`);
-      toast.error(`${label} 加载失败`);
+      toast.error(t('toast.loadFailed', { label }));
     }
 
     e.target.value = '';
@@ -575,14 +576,14 @@ export default function ProjectWorkspace() {
       setAuditResult(result);
       setAuditState('done');
       setSysLog(`Audit complete: ${result.records.length} elements in ${(duration / 1000).toFixed(1)}s`);
-      toast.success(`算量完成 · ${result.records.length} 构件 · ${(duration / 1000).toFixed(1)}s`);
+      toast.success(t('toast.auditDone', { count: result.records.length, time: (duration / 1000).toFixed(1) }));
     } catch (err) {
       setAuditDurationMs(performance.now() - t0);
       const message = err instanceof Error ? err.message : String(err);
       setAuditError(message);
       setAuditState('error');
       setSysLog(`Audit failed: ${message}`);
-      toast.error(`算量失败: ${message}`);
+      toast.error(t('toast.auditFailed', { msg: message }));
     }
   }, []);
 
@@ -623,7 +624,7 @@ export default function ProjectWorkspace() {
       setSysLog(
         `VO Complete: ${results.added.length} Added, ${results.deleted.length} Deleted, ${results.modified.length} Modified. Commercial: ${commercial.summary.omissions} omissions, ${commercial.summary.additions} additions. Pending rates: ${commercial.summary.pendingRateActions}. Net rated value: ${formatSignedCurrencyValue(commercial.summary.netValue)}.`,
       );
-      toast.success('VO 对比完成');
+      toast.success(t('toast.voCompareDone'));
 
       // Save comparison to project history
       if (activeBaseFile && activeRevisionFile) {
@@ -657,7 +658,7 @@ export default function ProjectWorkspace() {
       setCompareState('error');
       setCompareMessage(`Comparison failed: ${message}`);
       setSysLog(`VO Analysis Failed: ${message}`);
-      toast.error('VO 对比失败');
+      toast.error(t('toast.voCompareFailed'));
     }
 
     setIsRunning(false);
@@ -707,7 +708,7 @@ export default function ProjectWorkspace() {
         });
       }
       setSysLog('Premium VO Excel generated. One audit credit consumed from the secure cloud balance.');
-      toast.success('Excel 已导出');
+      toast.success(t('toast.excelExported'));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to validate cloud credits.';
       setBillingError(message);
@@ -1352,7 +1353,7 @@ export default function ProjectWorkspace() {
                       ) : (
                         <Zap className="h-3 w-3" />
                       )}
-                      {auditState === 'running' ? 'Auditing...' : 'Run Audit'}
+                      {auditState === 'running' ? t('sidebar.auditing') : t('workspace.runAudit')}
                     </button>
 
                     {/* Run Compare */}
@@ -1363,7 +1364,7 @@ export default function ProjectWorkspace() {
                       className="flex items-center gap-1.5 rounded-full bg-blue-600/90 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <Play className="h-3 w-3" />
-                      Run Compare
+                      {t('workspace.runCompare')}
                     </button>
 
                     {/* Export Excel */}
@@ -1374,7 +1375,7 @@ export default function ProjectWorkspace() {
                       className="flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-slate-300 transition hover:border-slate-600 hover:bg-slate-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <Download className="h-3 w-3" />
-                      {isExporting ? 'Exporting...' : 'Export Excel'}
+                      {isExporting ? t('common.processing') : t('workspace.exportExcel')}
                     </button>
                   </div>
                 </div>

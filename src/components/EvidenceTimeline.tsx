@@ -2,58 +2,65 @@
 // 显示 Case 生命周期中的所有事件
 
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import type { EvidenceEntry } from '../agent/vo-case-types';
 import VoCaseStatusBadge from './VoCaseStatusBadge';
 import type { VoCaseStatus } from '../agent/vo-case-types';
 
 // ── 图标和颜色映射 ─────────────────────────────────────────────────────────
 
-const KIND_CONFIG: Record<string, { icon: string; color: string; label: string }> = {
-  status_change:     { icon: '⟳', color: 'text-blue-400',    label: '状态变更' },
-  tool_execution:    { icon: '⚙', color: 'text-slate-400',   label: '工具执行' },
-  user_action:       { icon: '👤', color: 'text-slate-300',   label: '用户操作' },
-  agent_reasoning:   { icon: '🧠', color: 'text-purple-400',  label: 'Agent 推理' },
-  approval_decision: { icon: '✓', color: 'text-emerald-400', label: '审批决定' },
-  report_generated:  { icon: '📄', color: 'text-emerald-400', label: '报告生成' },
-  error:             { icon: '✗', color: 'text-red-400',     label: '错误' },
+const KIND_ICON: Record<string, { icon: string; color: string; key: string }> = {
+  status_change:     { icon: '⟳', color: 'text-blue-400',    key: 'evidence.statusChange' },
+  tool_execution:    { icon: '⚙', color: 'text-slate-400',   key: 'evidence.toolExec' },
+  user_action:       { icon: '👤', color: 'text-slate-300',   key: 'evidence.userAction' },
+  agent_reasoning:   { icon: '🧠', color: 'text-purple-400',  key: 'evidence.agentReasoning' },
+  approval_decision: { icon: '✓', color: 'text-emerald-400', key: 'evidence.approvalDecision' },
+  report_generated:  { icon: '📄', color: 'text-emerald-400', key: 'evidence.reportGeneration' },
+  error:             { icon: '✗', color: 'text-red-400',     key: 'evidence.error' },
 };
 
-const ACTOR_LABEL: Record<string, string> = {
-  user:   '用户',
-  agent:  'Agent',
-  system: '系统',
+const ACTOR_KEY: Record<string, string> = {
+  user:   'evidence.user',
+  agent:  'evidence.agent',
+  system: 'evidence.system',
 };
 
 // ── 时间格式化 ──────────────────────────────────────────────────────────────
 
-function formatTimestamp(iso: string): string {
-  try {
-    const date = new Date(iso);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-    const diffHour = Math.floor(diffMs / 3600000);
+function useFormatTimestamp() {
+  const { t } = useTranslation();
+  return (iso: string): string => {
+    try {
+      const date = new Date(iso);
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffMin = Math.floor(diffMs / 60000);
+      const diffHour = Math.floor(diffMs / 3600000);
 
-    if (diffMin < 1) return '刚刚';
-    if (diffMin < 60) return `${diffMin} 分钟前`;
-    if (diffHour < 24) return `${diffHour} 小时前`;
+      if (diffMin < 1) return t('evidence.justNow');
+      if (diffMin < 60) return `${diffMin} ${t('evidence.minutesAgo')}`;
+      if (diffHour < 24) return `${diffHour} ${t('evidence.hoursAgo')}`;
 
-    return date.toLocaleDateString('zh-CN', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return iso;
-  }
+      return date.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return iso;
+    }
+  };
 }
 
 // ── 单条 Evidence 渲染 ─────────────────────────────────────────────────────
 
 function EvidenceItem({ entry }: { key?: React.Key; entry: EvidenceEntry }) {
-  const kind = KIND_CONFIG[entry.kind] ?? KIND_CONFIG.error;
-  const actor = ACTOR_LABEL[entry.actor] ?? entry.actor;
+  const { t } = useTranslation();
+  const formatTimestamp = useFormatTimestamp();
+  const kindCfg = KIND_ICON[entry.kind] ?? KIND_ICON.error;
+  const kind = { ...kindCfg, label: t(kindCfg.key) };
+  const actor = t(ACTOR_KEY[entry.actor] ?? 'evidence.system');
 
   return (
     <div className="group relative flex gap-3 py-3">
@@ -87,7 +94,7 @@ function EvidenceItem({ entry }: { key?: React.Key; entry: EvidenceEntry }) {
         {/* 创建事件（没有 from_status） */}
         {entry.kind === 'status_change' && !entry.from_status && entry.to_status && (
           <div className="mt-1 flex items-center gap-2">
-            <span className="text-[10px] text-slate-500">创建 →</span>
+            <span className="text-[10px] text-slate-500">{t('evidence.transition')} →</span>
             <VoCaseStatusBadge status={entry.to_status as VoCaseStatus} />
           </div>
         )}
@@ -141,11 +148,12 @@ interface EvidenceTimelineProps {
 }
 
 export default function EvidenceTimeline({ evidence, loading }: EvidenceTimelineProps) {
+  const { t } = useTranslation();
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-600 border-t-blue-400" />
-        <span className="ml-2 text-xs text-slate-500">加载 Evidence...</span>
+        <span className="ml-2 text-xs text-slate-500">{t('evidence.loadingEvidence')}</span>
       </div>
     );
   }
@@ -153,7 +161,7 @@ export default function EvidenceTimeline({ evidence, loading }: EvidenceTimeline
   if (evidence.length === 0) {
     return (
       <div className="py-8 text-center text-xs text-slate-500">
-        暂无操作记录
+        {t('evidence.noRecords')}
       </div>
     );
   }
