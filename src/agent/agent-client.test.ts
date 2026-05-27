@@ -99,7 +99,7 @@ describe('Agent formal output approvals', () => {
 
     await session.send('Export the official workbook', vi.fn());
 
-    expect(tracker.requestApproval).toHaveBeenCalledWith('run-1', 'export_vo_excel', {});
+    expect(tracker.requestApproval).toHaveBeenCalledWith('run-1', 'export_vo_excel', { evidenceRefs: [] });
     expect(executeAgentTool).not.toHaveBeenCalled();
     expect(tracker.recordStep).toHaveBeenCalledWith(
       'run-1',
@@ -132,6 +132,28 @@ describe('Agent formal output approvals', () => {
     );
     expect(tracker.completeRun).toHaveBeenCalledWith('run-1', 'completed', result);
     expect(tracker.consumeApproval).toHaveBeenCalledWith('run-1', 'export_vo_excel');
+  });
+
+  it('restores captured evidence when a previously approved output is resumed', async () => {
+    const reference = {
+      id: '[CMP-001]',
+      kind: 'ifc_comparison' as const,
+      label: 'Comparison summary',
+      sourceFileName: 'base.ifc -> revision.ifc',
+      facts: { modified: 1 },
+    };
+    const tracker = buildTracker();
+    const session = new AgentSession(emptyToolContext());
+    vi.mocked(executeAgentTool).mockResolvedValueOnce({ ok: true });
+    session.setExecutionTracker(tracker);
+
+    await session.resumeApprovedAction('run-1', 'generate_report', { evidenceRefs: [reference] }, vi.fn());
+
+    expect(executeAgentTool).toHaveBeenCalledWith(
+      'generate_report',
+      { evidenceRefs: [reference] },
+      expect.objectContaining({ evidenceRefs: [reference] }),
+    );
   });
 
   it('answers a greeting locally without charging a model turn or calling tools', async () => {
@@ -335,6 +357,57 @@ describe('Agent formal output approvals', () => {
     expect(result).toBe('Final answer.');
     expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'assistant_delta', text: 'Hidden reasoning.' }));
     expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'thinking' }));
+  });
+
+  it('attaches only registered evidence citations to a final answer', async () => {
+    const reference = {
+      id: '[IFC-B-041]',
+      kind: 'ifc_component' as const,
+      label: 'Brick wall',
+      sourceFileName: 'base.ifc',
+      sourceSlot: 'base' as const,
+      facts: { type: 'IfcWall' },
+    };
+    vi.mocked(executeAgentTool).mockResolvedValueOnce({
+      model: 'base',
+      matched: 1,
+      evidenceRefs: [reference],
+    });
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(proxyResponse({
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'call-evidence',
+          type: 'function',
+          function: { name: 'query_ifc', arguments: '{"model":"base"}' },
+        }],
+      }))
+      .mockResolvedValueOnce(proxyResponse({
+        role: 'assistant',
+        content: 'Found a wall [IFC-B-041]. Ignore fake source [PDF-999:p1].',
+      })));
+    const tracker = buildTracker();
+    const session = new AgentSession(baseLoadedToolContext());
+    const onEvent = vi.fn();
+    session.setExecutionTracker(tracker);
+
+    await session.send('Find base walls.', onEvent);
+
+    expect(onEvent).toHaveBeenCalledWith({
+      kind: 'assistant_text',
+      text: 'Found a wall [IFC-B-041]. Ignore fake source [PDF-999:p1].',
+      evidence: expect.objectContaining({
+        cited: [reference],
+        invalidIds: ['[PDF-999:p1]'],
+        missingCitation: false,
+      }),
+    });
+    expect(tracker.recordEvidence).toHaveBeenCalledWith(
+      'run-1',
+      'step-1',
+      expect.objectContaining({ type: 'ifc_query' }),
+    );
   });
 
   it('blocks a fabricated IFC absence conclusion when no model evidence is available', async () => {

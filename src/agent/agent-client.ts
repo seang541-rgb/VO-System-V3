@@ -1,5 +1,12 @@
 import { supabase } from '../lib/supabase';
 import { executeAgentTool, getAvailableTools, type ToolContext } from './tools';
+import {
+  collectValidCitations,
+  extractEvidenceReferences,
+  mergeEvidenceReferences,
+  type AnswerEvidence,
+  type EvidenceReference,
+} from './evidence';
 
 // ── OpenAI-compatible message types (used by NVIDIA NIM / DeepSeek V4 Pro) ────
 
@@ -20,7 +27,7 @@ export interface OpenAIMessage {
 // ── Agent events ──────────────────────────────────────────────────────────────
 
 export type AgentEvent =
-  | { kind: 'assistant_text'; text: string }
+  | { kind: 'assistant_text'; text: string; evidence?: AnswerEvidence }
   | { kind: 'assistant_delta'; text: string }
   | { kind: 'tool_start'; name: string; input: Record<string, unknown> }
   | { kind: 'tool_end'; name: string; result: unknown; durationMs: number }
@@ -32,6 +39,9 @@ export type BillingMode = 'metered' | 'owner_test_bypass';
 
 export type AgentEvidenceType =
   | 'comparison'
+  | 'ifc_query'
+  | 'document_extract'
+  | 'bq_reference'
   | 'commercial_summary'
   | 'contract_assessment'
   | 'audit'
@@ -397,10 +407,14 @@ function evidenceForTool(name: string, result: unknown): { type: AgentEvidenceTy
   if (groundedLookupHasEvidence(name, result) === false) return null;
 
   switch (name) {
+    case 'query_ifc':
+      return { type: 'ifc_query', title: 'IFC query evidence', payload: result };
     case 'compare_ifc':
       return { type: 'comparison', title: 'IFC comparison result', payload: result };
     case 'summarize_commercial_impact':
-      return { type: 'commercial_summary', title: 'Commercial impact summary', payload: result };
+      return extractEvidenceReferences(result).some((reference) => reference.kind === 'bq_item')
+        ? { type: 'bq_reference', title: 'Verified BQ rate references', payload: result }
+        : { type: 'commercial_summary', title: 'Commercial impact summary', payload: result };
     case 'analyze_contract_clause':
       return { type: 'contract_assessment', title: 'Contract clause assessment packet', payload: result };
     case 'audit_ifc':
@@ -409,6 +423,8 @@ function evidenceForTool(name: string, result: unknown): { type: AgentEvidenceTy
       return { type: 'report', title: 'VO Excel workbook generated', payload: result };
     case 'generate_report':
       return { type: 'report', title: 'VO PDF report generated', payload: result };
+    case 'ocr_document':
+      return { type: 'document_extract', title: 'Document extraction evidence', payload: result };
     case 'lookup_regulation':
     case 'lookup_measurement_code':
     case 'get_vo_template':
@@ -473,9 +489,13 @@ export class AgentSession {
 
     onEvent({ kind: 'tool_start', name, input: args });
     const started = performance.now();
+    const resumedEvidenceRefs = extractEvidenceReferences({ evidenceRefs: args.evidenceRefs });
     let result: unknown;
     try {
-      result = await executeAgentTool(name, args, this.ctx);
+      result = await executeAgentTool(name, args, {
+        ...this.ctx,
+        evidenceRefs: mergeEvidenceReferences(this.ctx.evidenceRefs ?? [], resumedEvidenceRefs),
+      });
     } catch (error) {
       result = { error: error instanceof Error ? error.message : String(error) };
     }
@@ -546,6 +566,7 @@ export class AgentSession {
     let ledgerStep = 0;
     let consecutiveEmptyHops = 0;
     let turnId: string | null = null;
+    let runEvidenceRefs: EvidenceReference[] = [];
     const unresolvedGroundedLookups = new Set<string>();
     let blockedReply: string | null = null;
 
@@ -611,13 +632,20 @@ export class AgentSession {
 
       // Final answer: text with no tool calls
       if (rawText && toolCalls.length === 0) {
-        onEvent({ kind: 'assistant_text', text: rawText });
+        const evidence = runEvidenceRefs.length > 0
+          ? collectValidCitations(rawText, runEvidenceRefs)
+          : undefined;
+        onEvent({ kind: 'assistant_text', text: rawText, ...(evidence ? { evidence } : {}) });
         if (runId) {
           await tracker?.recordStep(runId, {
             sequenceNo: ++ledgerStep,
             stepType: 'assistant',
             status: 'completed',
-            output: { text: rawText },
+            output: {
+              text: rawText,
+              citedEvidence: evidence?.cited.map((reference) => reference.id) ?? [],
+              invalidCitations: evidence?.invalidIds ?? [],
+            },
           });
           await tracker?.completeRun(runId, 'completed', rawText);
         }
@@ -677,7 +705,10 @@ export class AgentSession {
               result = { error: 'APPROVAL_UNAVAILABLE: Formal outputs require an auditable project run.' };
               mayExecute = false;
             } else {
-              const approved = await tracker.requestApproval(runId, name, args);
+              const approved = await tracker.requestApproval(runId, name, {
+                ...args,
+                evidenceRefs: runEvidenceRefs,
+              });
               if (!approved) {
                 result = {
                   error: `APPROVAL_REJECTED: The user declined ${name}. Do not retry unless asked again.`,
@@ -688,7 +719,7 @@ export class AgentSession {
           }
           if (mayExecute) {
             try {
-              result = await executeAgentTool(name, args, this.ctx);
+              result = await executeAgentTool(name, args, { ...this.ctx, evidenceRefs: runEvidenceRefs });
             } catch (err) {
               result = { error: err instanceof Error ? err.message : String(err) };
             }
@@ -722,6 +753,7 @@ export class AgentSession {
         }
 
         const durationMs = Math.round(performance.now() - started);
+        runEvidenceRefs = mergeEvidenceReferences(runEvidenceRefs, extractEvidenceReferences(result));
         onEvent({
           kind: 'tool_end',
           name,

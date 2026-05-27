@@ -874,6 +874,7 @@ export default function App({ localMode = false }: { localMode?: boolean }) {
     voResults,
     bqItems,
     bqContext: buildBqMappingContext(bqItems, labelMappings),
+    bqFileName,
     ocrFile,
     baseFileName: v1File?.name ?? null,
     revisionFileName: v2File?.name ?? null,
@@ -885,7 +886,7 @@ export default function App({ localMode = false }: { localMode?: boolean }) {
       return handle;
     },
     activeIfcSlot,
-  }), [v1Components, v2Components, voResults, bqItems, labelMappings, ocrFile, v1File, v2File, runCompareForAgent, activeIfcSlot]);
+  }), [v1Components, v2Components, voResults, bqItems, bqFileName, labelMappings, ocrFile, v1File, v2File, runCompareForAgent, activeIfcSlot]);
 
   return (
     <AuthGuard allowLocal={localMode}>

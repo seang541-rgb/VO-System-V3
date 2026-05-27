@@ -6,6 +6,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const FORMAL_OUTPUT_ACTIONS = new Set(['export_vo_excel', 'generate_report']);
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 const EVIDENCE_TYPES = new Set([
+  'ifc_query',
+  'document_extract',
+  'bq_reference',
   'comparison',
   'commercial_summary',
   'contract_assessment',

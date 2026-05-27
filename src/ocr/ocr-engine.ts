@@ -5,11 +5,20 @@ export interface OcrResult {
   text: string;
   confidence: number;
   lines: { text: string; confidence: number }[];
+  pages: OcrPageResult[];
   elapsed: number;
   pageCount: number;
   processedPages: number;
   truncated: boolean;
   sourceType: 'image-ocr' | 'pdf-text' | 'pdf-mixed-ocr';
+}
+
+export interface OcrPageResult {
+  pageNumber: number;
+  text: string;
+  lines: { text: string; confidence: number }[];
+  confidence: number;
+  sourceType: 'image-ocr' | 'pdf-text' | 'pdf-ocr';
 }
 
 export type OcrLanguage = 'eng' | 'chi_sim' | 'chi_tra' | 'eng+chi_sim';
@@ -90,6 +99,7 @@ async function runPdfDocument(
   let ocrPages = 0;
   const textParts: string[] = [];
   const lines: { text: string; confidence: number }[] = [];
+  const pages: OcrPageResult[] = [];
   const confidenceScores: number[] = [];
 
   try {
@@ -101,7 +111,9 @@ async function runPdfDocument(
 
       if (nativeText.length >= 30) {
         textParts.push(`[Page ${pageNumber}]\n${nativeText}`);
-        nativeLines.forEach((text) => lines.push({ text, confidence: 100 }));
+        const pageLines = nativeLines.map((text) => ({ text, confidence: 100 }));
+        lines.push(...pageLines);
+        pages.push({ pageNumber, text: nativeText, lines: pageLines, confidence: 100, sourceType: 'pdf-text' });
         confidenceScores.push(100);
       } else {
         worker ??= await Tesseract.createWorker(language, Tesseract.OEM.LSTM_ONLY, {
@@ -114,8 +126,11 @@ async function runPdfDocument(
         const image = await renderPdfPage(page);
         const { data } = await worker.recognize(image);
         const recognizedText = data.text.trim();
+        const pageLines: { text: string; confidence: number }[] = [];
         textParts.push(`[Page ${pageNumber}]\n${recognizedText}`);
-        appendOcrLines(data.blocks, lines);
+        appendOcrLines(data.blocks, pageLines);
+        lines.push(...pageLines);
+        pages.push({ pageNumber, text: recognizedText, lines: pageLines, confidence: data.confidence, sourceType: 'pdf-ocr' });
         confidenceScores.push(data.confidence);
         ocrPages += 1;
       }
@@ -134,6 +149,7 @@ async function runPdfDocument(
       ? confidenceScores.reduce((sum, score) => sum + score, 0) / confidenceScores.length
       : 0,
     lines,
+    pages,
     elapsed: performance.now() - start,
     pageCount: pdf.numPages,
     processedPages,
@@ -170,6 +186,13 @@ export async function runOcr(
       text: data.text.trim(),
       confidence: data.confidence,
       lines,
+      pages: [{
+        pageNumber: 1,
+        text: data.text.trim(),
+        lines,
+        confidence: data.confidence,
+        sourceType: 'image-ocr',
+      }],
       elapsed: performance.now() - start,
       pageCount: 1,
       processedPages: 1,

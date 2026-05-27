@@ -1108,6 +1108,7 @@ export default function ProjectWorkspace() {
     voResults,
     bqItems,
     bqContext: buildBqMappingContext(bqItems, labelMappings),
+    bqFileName,
     ocrFile,
     baseFileName: v1File?.name ?? null,
     revisionFileName: v2File?.name ?? null,
@@ -1122,7 +1123,7 @@ export default function ProjectWorkspace() {
       return handle;
     },
     activeIfcSlot,
-  }), [v1Components, v2Components, voResults, bqItems, labelMappings, ocrFile, v1File, v2File, runCompareForAgent, projectId, activeIfcSlot]);
+  }), [v1Components, v2Components, voResults, bqItems, bqFileName, labelMappings, ocrFile, v1File, v2File, runCompareForAgent, projectId, activeIfcSlot]);
 
   const canCompareForPanel = v1State === 'ready' && v2State === 'ready' && !isRunning;
   const canAuditForPanel = (v1State === 'ready' || v2State === 'ready') && auditState !== 'running';

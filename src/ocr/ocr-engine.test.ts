@@ -58,6 +58,13 @@ describe('PDF document reading', () => {
     expect(result.sourceType).toBe('pdf-text');
     expect(result.text).toContain('[Page 1]');
     expect(result.text).toContain('Concrete wall MYR 1,250.00');
+    expect(result.pages).toEqual([
+      expect.objectContaining({
+        pageNumber: 1,
+        sourceType: 'pdf-text',
+        text: expect.stringContaining('Concrete wall MYR 1,250.00'),
+      }),
+    ]);
     expect(result.processedPages).toBe(1);
     expect(result.truncated).toBe(false);
     expect(cleanup).toHaveBeenCalledOnce();

@@ -11,6 +11,10 @@ const proxySource = readFileSync(
   new URL('../../supabase/functions/agent-proxy/index.ts', import.meta.url),
   'utf8',
 );
+const ledgerSource = readFileSync(
+  new URL('../../supabase/functions/agent-ledger/index.ts', import.meta.url),
+  'utf8',
+);
 
 describe('agent proxy server policy contract', () => {
   const validRequest = {
@@ -60,6 +64,21 @@ describe('agent proxy server policy contract', () => {
     expect(body.model).toBe(FIXED_MODEL);
     expect(body.messages[0].content).toContain('untrusted data');
     expect(tools.map((tool) => tool?.function.name)).toEqual(['query_ifc', 'compare_ifc']);
+  });
+
+  it('requires factual answers to cite supplied evidence identifiers without trusting excerpts', () => {
+    const body = buildNimRequest(validateAgentProxyPayload(validRequest));
+    const prompt = String(body.messages[0].content);
+
+    expect(prompt).toContain('citation identifiers');
+    expect(prompt).toContain('Never invent citation identifiers');
+    expect(prompt).toContain('untrusted data');
+  });
+
+  it('allows evidence-chain records in the authoritative ledger', () => {
+    expect(ledgerSource).toContain("'ifc_query'");
+    expect(ledgerSource).toContain("'document_extract'");
+    expect(ledgerSource).toContain("'bq_reference'");
   });
 
   it('bypasses credits only for a configured authenticated owner UUID', () => {

@@ -10,6 +10,7 @@ import { buildCommercialBreakdown } from '../BimEngine';
 import { exportVoSubstantiationWorkbook } from '../vo-report';
 import { generateVoPdfReport } from '../report/pdf-generator';
 import type { OcrLanguage } from '../ocr/ocr-engine';
+import { mergeEvidenceReferences, type EvidenceReference } from './evidence';
 import {
   fetchClause,
   fetchVoTemplate,
@@ -103,6 +104,7 @@ export interface ToolContext {
   voResults: VoComparisonResults | null;
   bqItems: BqLineItem[];
   bqContext?: BqMappingContext;
+  bqFileName?: string | null;
   baseFileName: string | null;
   revisionFileName: string | null;
   runCompare: () => Promise<VoComparisonResults | null>;
@@ -110,6 +112,7 @@ export interface ToolContext {
   getActiveIfcHandle?: () => { api: any; modelID: number } | null;
   activeIfcSlot?: 'base' | 'revision' | null;
   ocrFile?: File | null;
+  evidenceRefs?: EvidenceReference[];
 }
 
 export interface AnthropicToolSchema {
@@ -521,6 +524,107 @@ function summarizeAction(a: VoCommercialAction) {
   };
 }
 
+function paddedEvidenceNumber(value: number) {
+  return String(value).padStart(3, '0');
+}
+
+function evidenceHash(value: string) {
+  let hash = 0;
+  for (const character of value) {
+    hash = (hash * 31 + (character.codePointAt(0) ?? 0)) >>> 0;
+  }
+  return hash.toString(36).toUpperCase();
+}
+
+function evidenceToken(value: string) {
+  const asciiToken = value.replace(/[^a-z0-9]+/giu, '-').replace(/^-+|-+$/gu, '').toUpperCase();
+  if (/[^\x00-\x7F]/u.test(value)) {
+    return `${asciiToken || 'ITEM'}-${evidenceHash(value)}`;
+  }
+  return asciiToken || `ITEM-${evidenceHash(value)}`;
+}
+
+function ifcReference(
+  component: BimComponent,
+  model: WhichModel,
+  fileName: string | null,
+  index: number,
+): EvidenceReference {
+  const marker = model === 'base' ? 'B' : 'R';
+  const numericId = typeof component.expressID === 'number' ? component.expressID : index + 1;
+  return {
+    id: `[IFC-${marker}-${paddedEvidenceNumber(numericId)}]`,
+    kind: 'ifc_component',
+    label: component.qsLabel || component.name || component.type || `${model} IFC component`,
+    sourceFileName: fileName,
+    sourceSlot: model,
+    locator: { expressID: component.expressID, ifcId: component.ifcId },
+    facts: {
+      type: component.type ?? null,
+      section: component.smm2SectionCode ?? null,
+      level: component.levelName ?? null,
+    },
+  };
+}
+
+function comparisonEvidenceReference(results: VoComparisonResults, ctx: ToolContext): EvidenceReference {
+  return {
+    id: '[CMP-001]',
+    kind: 'ifc_comparison',
+    label: 'IFC comparison summary',
+    sourceFileName: [ctx.baseFileName, ctx.revisionFileName].filter(Boolean).join(' -> ') || null,
+    facts: {
+      added: results.added.length,
+      deleted: results.deleted.length,
+      modified: results.modified.length,
+    },
+  };
+}
+
+function bqEvidenceReferences(actions: VoCommercialAction[], ctx: ToolContext): EvidenceReference[] {
+  const references = new Map<string, EvidenceReference>();
+  actions
+    .filter((action) => (
+      action.rateStatus === 'rated'
+      && action.pricingSource === 'contract-bq'
+      && typeof action.bqItemReference === 'string'
+    ))
+    .forEach((action) => {
+      const id = `[BQ-${evidenceToken(action.bqItemReference!)}]`;
+      const prior = references.get(id);
+      if (prior) {
+        prior.facts.quantity = Number(prior.facts.quantity ?? 0) + action.quantity;
+        prior.facts.amount = Number(prior.facts.amount ?? 0) + Number(action.amount ?? 0);
+        prior.facts.actionCount = Number(prior.facts.actionCount ?? 1) + 1;
+        return;
+      }
+      references.set(id, {
+        id,
+        kind: 'bq_item',
+        label: action.bqDescription || action.bqItemReference!,
+        sourceFileName: ctx.bqFileName ?? null,
+        locator: { itemReference: action.bqItemReference! },
+        facts: {
+          unit: action.unit,
+          rate: action.rate ?? null,
+          amount: action.amount ?? null,
+          quantity: action.quantity,
+          actionCount: 1,
+        },
+      });
+    });
+  return [...references.values()];
+}
+
+function formalOutputEvidenceReferences(ctx: ToolContext): EvidenceReference[] {
+  if (!ctx.voResults) return ctx.evidenceRefs ?? [];
+  const commercial = buildCommercialBreakdown(ctx.voResults, ctx.bqContext);
+  return mergeEvidenceReferences(
+    ctx.evidenceRefs ?? [],
+    [comparisonEvidenceReference(ctx.voResults, ctx), ...bqEvidenceReferences(commercial.actions ?? [], ctx)],
+  );
+}
+
 export async function executeAgentTool(
   name: string,
   input: Record<string, unknown>,
@@ -549,12 +653,29 @@ export async function executeAgentTool(
         return true;
       });
 
+      const components = filtered.slice(0, limit);
+      const evidenceRefs = components.length > 0
+        ? components.map((component, index) => ifcReference(
+          component,
+          which,
+          which === 'base' ? ctx.baseFileName : ctx.revisionFileName,
+          index,
+        ))
+        : [{
+          id: `[IFC-${which === 'base' ? 'B' : 'R'}-000]`,
+          kind: 'ifc_component' as const,
+          label: `${which} IFC query result`,
+          sourceFileName: which === 'base' ? ctx.baseFileName : ctx.revisionFileName,
+          sourceSlot: which,
+          facts: { total: pool.length, matched: 0 },
+        }];
       return {
         model: which,
         total: pool.length,
         matched: filtered.length,
         truncated: filtered.length > limit,
-        components: filtered.slice(0, limit).map(summarizeComponent),
+        components: components.map(summarizeComponent),
+        evidenceRefs,
       };
     }
 
@@ -603,6 +724,7 @@ export async function executeAgentTool(
           type: c.type,
           section: c.smm2SectionCode || null,
         })),
+        evidenceRefs: [comparisonEvidenceReference(results, ctx)],
       };
     }
 
@@ -651,6 +773,7 @@ export async function executeAgentTool(
         summary: breakdown.summary,
         qsSummary: ctx.voResults.qsSummary,
         topActions: top,
+        evidenceRefs: bqEvidenceReferences(actions, ctx),
       };
     }
 
@@ -659,13 +782,15 @@ export async function executeAgentTool(
         return { error: 'No comparison results available. Run compare_ifc first.' };
       }
       try {
+        const evidenceRefs = formalOutputEvidenceReferences(ctx);
         exportVoSubstantiationWorkbook(ctx.voResults, {
           baseModelName: ctx.baseFileName ?? undefined,
           revisionModelName: ctx.revisionFileName ?? undefined,
           pricingContext: ctx.bqContext,
+          evidenceRefs,
         });
         ctx.dispatchEvent?.('report.generated', { format: 'excel', source: 'agent' });
-        return { ok: true, note: 'Workbook generated and downloaded in the browser.' };
+        return { ok: true, note: 'Workbook generated and downloaded in the browser.', evidenceRefs };
       } catch (err) {
         return { error: err instanceof Error ? err.message : String(err) };
       }
@@ -922,6 +1047,18 @@ export async function executeAgentTool(
           netVolumeM3: r.netVolumeM3,
           quantitySource: r.quantitySource,
         })),
+        evidenceRefs: [{
+          id: '[AUD-001]',
+          kind: 'audit_result',
+          label: `${which} IFC audit summary`,
+          sourceFileName: which === 'base' ? ctx.baseFileName : ctx.revisionFileName,
+          sourceSlot: which,
+          facts: {
+            elementsAudited: result.records.length,
+            quantityModeUsed: result.quantityModeUsed,
+            jkrCodeCount: result.summary.jkrCodeCount,
+          },
+        } satisfies EvidenceReference],
       };
     }
 
@@ -999,6 +1136,23 @@ export async function executeAgentTool(
             ? `${limitations.join(' ')} Do not claim conclusions about omitted content.`
             : 'The full uploaded document was processed.',
         };
+        const pageResults = result.pages ?? [{
+          pageNumber: 1,
+          text: result.text,
+          confidence: result.confidence,
+          sourceType: result.sourceType === 'image-ocr' ? 'image-ocr' : 'pdf-text',
+        }];
+        response.evidenceRefs = pageResults.slice(0, 12).map((page) => ({
+          id: `[PDF-001:p${page.pageNumber}]`,
+          kind: 'document_page',
+          label: `${ctx.ocrFile!.name} page ${page.pageNumber}`,
+          sourceFileName: ctx.ocrFile!.name,
+          pageNumber: page.pageNumber,
+          excerpt: page.text.slice(0, 300),
+          facts: { extraction: page.sourceType },
+          confidence: page.confidence,
+          limitation: limitations.length > 0 ? limitations.join(' ') : null,
+        } satisfies EvidenceReference));
         if (extractBq) {
           const bqItems = extractBqFromOcrText(result.text);
           response.detectedBqItems = bqItems.slice(0, 20);
@@ -1015,6 +1169,7 @@ export async function executeAgentTool(
         return { error: 'No comparison results available. Run compare_ifc first.' };
       }
       try {
+        const evidenceRefs = formalOutputEvidenceReferences(ctx);
         const projectName = typeof input.projectName === 'string' ? input.projectName : undefined;
         const preparedBy = typeof input.preparedBy === 'string' ? input.preparedBy : undefined;
         generateVoPdfReport(ctx.voResults, {
@@ -1023,9 +1178,10 @@ export async function executeAgentTool(
           revisionModelName: ctx.revisionFileName ?? undefined,
           pricingContext: ctx.bqContext,
           preparedBy,
+          evidenceRefs,
         });
         ctx.dispatchEvent?.('report.generated', { format: 'pdf', source: 'agent' });
-        return { ok: true, note: 'PDF report generated and downloaded in the browser.' };
+        return { ok: true, note: 'PDF report generated and downloaded in the browser.', evidenceRefs };
       } catch (err) {
         return { error: err instanceof Error ? err.message : String(err) };
       }

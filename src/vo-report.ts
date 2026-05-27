@@ -11,11 +11,13 @@ import {
 import { PROJECT_QS_OVERRIDES } from './qs-project-config';
 import { StarRateBuildUpRule } from './qs-config';
 import { recommendBqMatches } from './bq-tools';
+import type { EvidenceReference } from './agent/evidence';
 
 export interface VoReportContext {
   baseModelName?: string;
   revisionModelName?: string;
   pricingContext?: BqMappingContext;
+  evidenceRefs?: EvidenceReference[];
 }
 
 function hasVerifiedPricingContext(pricingContext?: BqMappingContext) {
@@ -885,6 +887,24 @@ export function exportVoSubstantiationWorkbook(results: VoComparisonResults, con
   XLSX.utils.book_append_sheet(workbook, buildStarRateBuildUpSheet(outputRows), 'Star Rate Build-up');
   XLSX.utils.book_append_sheet(workbook, buildMappingRegisterSheet(outputRows, context.pricingContext), 'BQ Mapping Register');
   XLSX.utils.book_append_sheet(workbook, buildDetailSheet(outputRows), 'VO Substantiation');
+  if (context.evidenceRefs && context.evidenceRefs.length > 0) {
+    const evidenceRows = [
+      ['Evidence Index'],
+      ['Citation', 'Type', 'Source', 'Location', 'Evidence / Limitation'],
+      ...context.evidenceRefs.map((reference) => [
+        reference.id,
+        reference.kind,
+        reference.sourceFileName ?? '-',
+        reference.pageNumber
+          ? `Page ${reference.pageNumber}`
+          : reference.locator?.itemReference ?? reference.locator?.ifcId ?? '-',
+        reference.limitation || reference.excerpt || reference.label,
+      ]),
+    ];
+    const evidenceSheet = XLSX.utils.aoa_to_sheet(evidenceRows);
+    evidenceSheet['!cols'] = [{ wch: 18 }, { wch: 20 }, { wch: 38 }, { wch: 22 }, { wch: 80 }];
+    XLSX.utils.book_append_sheet(workbook, evidenceSheet, 'Evidence Index');
+  }
 
   const fileName = `vo-substantiation-${Date.now()}.xlsx`;
   XLSX.writeFile(workbook, fileName);

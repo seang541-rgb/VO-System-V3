@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import type { VoComparisonResults } from '../BimEngine';
 import { buildCommercialBreakdown } from '../BimEngine';
 import type { BqMappingContext } from '../BimEngine';
+import type { EvidenceReference } from '../agent/evidence';
 
 interface PdfReportOptions {
   projectName?: string;
@@ -11,6 +12,15 @@ interface PdfReportOptions {
   pricingContext?: BqMappingContext;
   preparedBy?: string;
   date?: string;
+  evidenceRefs?: EvidenceReference[];
+}
+
+function evidenceLocation(reference: EvidenceReference) {
+  if (reference.pageNumber) return `Page ${reference.pageNumber}`;
+  if (reference.locator?.itemReference) return reference.locator.itemReference;
+  if (reference.locator?.ifcId) return reference.locator.ifcId;
+  if (typeof reference.locator?.expressID === 'number') return `#${reference.locator.expressID}`;
+  return '-';
 }
 
 export function generateVoPdfReport(results: VoComparisonResults, options: PdfReportOptions = {}): void {
@@ -161,6 +171,32 @@ export function generateVoPdfReport(results: VoComparisonResults, options: PdfRe
       theme: 'striped',
       styles: { fontSize: 8 },
       headStyles: { fillColor: [239, 68, 68] },
+      margin: { left: margin, right: margin },
+    });
+  }
+
+  if (options.evidenceRefs && options.evidenceRefs.length > 0) {
+    doc.addPage();
+    doc.setFontSize(16);
+    doc.text('Evidence Index', margin, 25);
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text('Sources used by this output. Extracted document text remains subject to verification.', margin, 32);
+    doc.setTextColor(0, 0, 0);
+
+    autoTable(doc, {
+      startY: 39,
+      head: [['Citation', 'Type', 'Source', 'Location', 'Evidence / Limitation']],
+      body: options.evidenceRefs.map((reference) => [
+        reference.id,
+        reference.kind,
+        reference.sourceFileName ?? '-',
+        evidenceLocation(reference),
+        reference.limitation || reference.excerpt || reference.label,
+      ]),
+      theme: 'striped',
+      styles: { fontSize: 7 },
+      headStyles: { fillColor: [59, 130, 246] },
       margin: { left: margin, right: margin },
     });
   }

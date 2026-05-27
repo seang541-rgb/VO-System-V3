@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Sparkles, Send, Square, Wrench, Loader2, ShieldCheck, FileUp, FileText } from 'lucide-react';
 import { AgentSession, type AgentEvent, type BillingMode, type OpenAIMessage } from '../agent/agent-client';
+import { extractEvidenceReferences, summarizeEvidenceCounts, type AnswerEvidence, type EvidenceReference } from '../agent/evidence';
 import type { ToolContext } from '../agent/tools';
 import { useCopilotHistory } from '../hooks/useCopilotHistory';
 import { useCopilotConversations } from '../hooks/useCopilotConversations';
@@ -11,6 +12,7 @@ interface ChatEntry {
   kind: 'user' | 'assistant' | 'tool' | 'error';
   text: string;
   meta?: string;
+  evidence?: AnswerEvidence;
 }
 
 interface CopilotPanelProps {
@@ -26,8 +28,18 @@ function newId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function truncate(str: string, n = 400) {
-  return str.length > n ? `${str.slice(0, n)}…` : str;
+function evidenceSummary(evidence: AnswerEvidence) {
+  const references = evidence.cited.length > 0 ? evidence.cited : evidence.available;
+  const counts = summarizeEvidenceCounts(references);
+  return Object.entries(counts).map(([key, value]) => `${key} ${value}`).join(' / ');
+}
+
+function evidenceLocation(reference: EvidenceReference) {
+  if (reference.pageNumber) return `Page ${reference.pageNumber}`;
+  if (reference.locator?.itemReference) return reference.locator.itemReference;
+  if (reference.locator?.ifcId) return reference.locator.ifcId;
+  if (typeof reference.locator?.expressID === 'number') return `#${reference.locator.expressID}`;
+  return null;
 }
 
 const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
@@ -143,7 +155,7 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
         switch (event.kind) {
           case 'assistant_text':
             setStreamingText('');
-            if (event.text) pushEntry({ id: newId(), kind: 'assistant', text: event.text });
+            if (event.text) pushEntry({ id: newId(), kind: 'assistant', text: event.text, evidence: event.evidence });
             break;
           case 'assistant_delta':
             setStreamingText((current) => current + event.text);
@@ -156,17 +168,20 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
               id: newId(),
               kind: 'tool',
               text: `${event.name}`,
-              meta: truncate(JSON.stringify(event.input), 200),
+              meta: 'Processing workspace evidence',
             });
             break;
           case 'tool_end':
             setActiveToolLabel(null);
+            {
+              const references = extractEvidenceReferences(event.result);
             pushEntry({
               id: newId(),
               kind: 'tool',
               text: `${event.name} · ${event.durationMs}ms`,
-              meta: truncate(JSON.stringify(event.result), 400),
+              meta: references.length > 0 ? `${references.length} evidence reference(s) recorded` : 'Step completed',
             });
+            }
             break;
           case 'credits':
             setBillingMode(event.billingMode);
@@ -231,10 +246,12 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
               id: newId(),
               kind: 'tool',
               text: `${event.name} - ${event.durationMs}ms`,
-              meta: truncate(JSON.stringify(event.result), 400),
+              meta: extractEvidenceReferences(event.result).length > 0
+                ? `${extractEvidenceReferences(event.result).length} evidence reference(s) recorded`
+                : 'Step completed',
             });
           } else if (event.kind === 'assistant_text') {
-            pushEntry({ id: newId(), kind: 'assistant', text: event.text });
+            pushEntry({ id: newId(), kind: 'assistant', text: event.text, evidence: event.evidence });
           } else if (event.kind === 'error') {
             pushEntry({ id: newId(), kind: 'error', text: event.message });
           }
@@ -397,8 +414,42 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
           if (entry.kind === 'assistant') {
             return (
               <div key={entry.id} className="flex justify-start">
-                <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tl-sm border border-slate-700 bg-slate-800/80 px-3.5 py-2 text-sm text-slate-100 shadow">
-                  {entry.text}
+                <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-slate-700 bg-slate-800/80 px-3.5 py-2 text-sm text-slate-100 shadow">
+                  <div className="whitespace-pre-wrap">{entry.text}</div>
+                  {entry.evidence && (
+                    <details className="mt-3 border-t border-slate-700/80 pt-2 text-xs text-slate-300">
+                      <summary className="flex cursor-pointer items-center gap-2 text-emerald-300">
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                        {entry.evidence.missingCitation
+                          ? '未绑定可核验依据'
+                          : `依据 ${entry.evidence.cited.length} 项：${evidenceSummary(entry.evidence)}`}
+                      </summary>
+                      {entry.evidence.invalidIds.length > 0 && (
+                        <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-amber-200">
+                          未验证引用已忽略：{entry.evidence.invalidIds.join(', ')}
+                        </div>
+                      )}
+                      <div className="mt-2 space-y-2">
+                        {(entry.evidence.cited.length > 0 ? entry.evidence.cited : entry.evidence.available).map((reference) => (
+                          <div key={reference.id} className="rounded-md border border-slate-700 bg-slate-900/60 px-2.5 py-2">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <span className="font-mono font-semibold text-blue-300">{reference.id}</span>
+                              <span className="text-slate-200">{reference.label}</span>
+                            </div>
+                            <div className="mt-1 text-[11px] text-slate-400">
+                              {[reference.sourceFileName, evidenceLocation(reference)].filter(Boolean).join(' / ') || 'Workspace evidence'}
+                            </div>
+                            {reference.excerpt && (
+                              <div className="mt-1.5 text-[11px] text-slate-300">{reference.excerpt}</div>
+                            )}
+                            {reference.limitation && (
+                              <div className="mt-1.5 text-[11px] text-amber-300">{reference.limitation}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
                 </div>
               </div>
             );
