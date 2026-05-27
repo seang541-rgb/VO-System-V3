@@ -19,6 +19,7 @@ import ResultsTable from '../components/ResultsTable';
 import BQMappingPanel from '../components/BQMappingPanel';
 import CopilotPanel from '../components/CopilotPanel';
 import AuditPanel from '../components/AuditPanel';
+import VoCasePanel from '../components/VoCasePanel';
 import ViewerErrorBoundary from '../components/ViewerErrorBoundary';
 import type { AuditState } from '../components/AuditPanel';
 import type { AuditResult } from '../audit/types';
@@ -38,6 +39,7 @@ import {
   Layers3,
   BarChart3,
   ClipboardList,
+  Briefcase,
   FileBox,
   Play,
   Download,
@@ -1122,6 +1124,7 @@ export default function ProjectWorkspace() {
 
   const tabs: { key: ActiveTab; label: string; icon: React.ReactNode; activeClass: string }[] = [
     { key: 'copilot', label: 'Copilot', icon: <Sparkles className="h-3.5 w-3.5" />, activeClass: 'bg-blue-600 text-white' },
+    { key: 'cases', label: 'Cases', icon: <Briefcase className="h-3.5 w-3.5" />, activeClass: 'bg-blue-600 text-white' },
     { key: 'overview', label: '3D', icon: <Layers3 className="h-3.5 w-3.5" />, activeClass: 'bg-blue-600 text-white' },
     { key: 'audit', label: 'Audit', icon: <BarChart3 className="h-3.5 w-3.5" />, activeClass: 'bg-amber-600 text-white' },
     { key: 'valuation', label: 'BQ', icon: <ClipboardList className="h-3.5 w-3.5" />, activeClass: 'bg-blue-600 text-white' },
@@ -1278,6 +1281,12 @@ export default function ProjectWorkspace() {
                 auditDurationMs={auditDurationMs}
                 onRunAudit={runAudit}
                 canRun={v1State === 'ready' || v2State === 'ready'}
+              />
+            ) : activeTab === 'cases' ? (
+              <VoCasePanel
+                projectId={projectId!}
+                userId={user?.id}
+                onSwitchToCopilot={() => setActiveTab('copilot')}
               />
             ) : (
               <div className="flex flex-1 flex-col bg-slate-900">

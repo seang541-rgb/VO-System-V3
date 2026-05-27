@@ -964,3 +964,117 @@ export async function executeAgentTool(
       return { error: `Unknown tool: ${name}` };
   }
 }
+// ── 标准化工具结果 ──────────────────────────────────────────────────────────
+// 所有工具的输出都通过此接口返回给 Agent，保证一致的格式。
+// Agent 只需要检查 `success` 字段就知道是否成功，然后读 `summary` 获取简洁摘要。
+
+export interface StandardToolResult {
+  /** 工具执行是否成功 */
+  success: boolean;
+  /** 工具名称 */
+  tool: string;
+  /** 人类可读的一句话摘要（Agent 可以直接引用） */
+  summary: string;
+  /** 结构化数据（成功时） */
+  data?: unknown;
+  /** 错误消息（失败时） */
+  error?: string;
+  /** 执行耗时 ms */
+  duration_ms?: number;
+}
+
+/** 生成简洁摘要 */
+function generateToolSummary(name: string, result: unknown): string {
+  if (!result || typeof result !== 'object') return `${name} 完成`;
+
+  const r = result as Record<string, unknown>;
+
+  // 错误情况
+  if (r.error) return `${name} 失败: ${String(r.error).slice(0, 100)}`;
+
+  switch (name) {
+    case 'query_ifc':
+      return `查询到 ${r.matched ?? 0}/${r.total ?? 0} 个构件 (${r.model ?? 'unknown'} 模型)`;
+
+    case 'compare_ifc': {
+      const s = r.summary as Record<string, number> | undefined;
+      if (!s) return '对比完成';
+      return `对比完成: ${s.added ?? 0} 新增, ${s.deleted ?? 0} 删除, ${s.modified ?? 0} 修改`;
+    }
+
+    case 'summarize_commercial_impact': {
+      const s = r.summary as Record<string, unknown> | undefined;
+      if (!s) return '商业影响总结完成';
+      return `商业影响: ${s.omissions ?? 0} 遗漏, ${s.additions ?? 0} 新增, 净值 RM ${s.netValue ?? 0}`;
+    }
+
+    case 'export_vo_excel':
+      return r.ok ? 'Excel 已生成并下载' : 'Excel 生成失败';
+
+    case 'generate_report':
+      return r.ok ? '报告已生成' : '报告生成失败';
+
+    case 'analyze_contract_clause':
+      return `合同条款分析完成 (${(r as Record<string, unknown>).claimType ?? 'general'})`;
+
+    case 'lookup_regulation':
+      return `法规查询完成: ${((r as Record<string, unknown>).totalResults as number) ?? 0} 条结果`;
+
+    case 'lookup_measurement_code':
+      return `计量代码查询完成: ${((r as Record<string, unknown>).results as unknown[])?.length ?? 0} 条结果`;
+
+    case 'get_vo_template':
+      return (r as Record<string, unknown>).found ? '模板已找到' : '未找到匹配模板';
+
+    case 'audit_ifc':
+      return `算量完成: ${((r as Record<string, unknown>).totalRecords as number) ?? 0} 个构件`;
+
+    case 'estimate_cost': {
+      const rates = (r as Record<string, unknown>).matchedRates as unknown[];
+      return `成本估算完成: ${rates?.length ?? 0} 条费率匹配`;
+    }
+
+    case 'ocr_document':
+      return `OCR 识别完成: ${((r as Record<string, unknown>).extractedItems as unknown[])?.length ?? 0} 个项目`;
+
+    default:
+      return `${name} 完成`;
+  }
+}
+
+/**
+ * 标准化执行工具 — 包装 executeAgentTool，返回统一格式。
+ * Agent 层应该优先使用此函数而不是直接调用 executeAgentTool。
+ */
+export async function executeToolStandardized(
+  name: string,
+  input: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<StandardToolResult> {
+  const t0 = performance.now();
+  try {
+    const raw = await executeAgentTool(name, input, ctx);
+    const durationMs = Math.round(performance.now() - t0);
+    const rawObj = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : {};
+    const hasError = 'error' in rawObj && typeof rawObj.error === 'string';
+
+    return {
+      success: !hasError,
+      tool: name,
+      summary: generateToolSummary(name, raw),
+      data: hasError ? undefined : raw,
+      error: hasError ? String(rawObj.error) : undefined,
+      duration_ms: durationMs,
+    };
+  } catch (err) {
+    const durationMs = Math.round(performance.now() - t0);
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      tool: name,
+      summary: `${name} 异常: ${message.slice(0, 100)}`,
+      error: message,
+      duration_ms: durationMs,
+    };
+  }
+}

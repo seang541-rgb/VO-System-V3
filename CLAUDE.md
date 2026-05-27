@@ -69,6 +69,12 @@ src/
     context-manager.ts  # Session context tracking across tool hops
     roles.ts            # Multi-role system (QS, Contract, Compliance, Reporter)
     proactive-discovery.ts  # Workspace analysis → suggestion engine
+    vo-case-types.ts    # VO Case 状态机类型定义 + VALID_TRANSITIONS
+    vo-case-orchestrator.ts  # 状态机引擎 + Evidence Log + CRUD
+    token-budget.ts     # Token 估算 + 工具结果截断 + 消息压缩
+    output-guard.ts     # Agent 输出安全校验（XSS/credential leak）
+    rate-limiter.ts     # 客户端请求限流（滑动窗口）
+    planner.ts          # 轻量级任务计划解析 + 进度追踪
   ocr/
     ocr-engine.ts       # Tesseract.js OCR with BQ extraction
   report/
@@ -92,6 +98,11 @@ src/
     ProjectCard.tsx      # Project card for dashboard
     ResultsTable.tsx     # VO comparison results table
     UpgradePrompt.tsx    # Modal shown when plan limit is reached
+    VoCasePanel.tsx      # VO Case 列表+详情容器（Cases tab）
+    VoCaseList.tsx       # VO Case 列表组件
+    VoCaseDetail.tsx     # VO Case 详情 + 审批操作
+    VoCaseStatusBadge.tsx # VO Case 状态标签
+    EvidenceTimeline.tsx # VO Case 审计日志时间线
   layouts/
     AppLayout.tsx        # Authenticated shell (header + sidebar + outlet)
   pages/
@@ -113,6 +124,8 @@ src/
     useFileVersions.ts   # File version management
     useWebhooks.ts       # Webhook CRUD + dispatch
     useApiKeys.ts        # API key generation + revocation
+    useVoCases.ts        # VO Case 列表 + 单个 Case 详情 hooks
+    useVoCaseProgress.ts # VO Case 分析进度追踪 hook
   locales/
     zh/translation.json  # Chinese translations (default)
     en/translation.json  # English translations

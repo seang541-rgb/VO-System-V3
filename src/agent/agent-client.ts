@@ -2,6 +2,10 @@ import { supabase } from '../lib/supabase';
 import { OPENAI_TOOL_DEFINITIONS, executeAgentTool, getAvailableTools, buildToolRoutingHint, type ToolContext } from './tools';
 import { ContextManager } from './context-manager';
 import { buildRoleOverlay } from './roles';
+import { truncateToolResult, compressMessages, getBudgetStatus } from './token-budget';
+import { guardAgentOutput } from './output-guard';
+import { parsePlan, advancePlan, matchToolToStep, type AgentPlan } from './planner';
+import { RateLimiter } from './rate-limiter';
 
 // ── OpenAI-compatible message types (used by NVIDIA NIM / DeepSeek V4 Pro) ────
 
@@ -18,6 +22,14 @@ export interface OpenAIMessage {
   tool_call_id?: string;
   name?: string;
 }
+
+// ── Agent reliability config ─────────────────────────────────────────────────
+
+/** Tool execution timeout in milliseconds (30 seconds) */
+const TOOL_TIMEOUT_MS = 30_000;
+
+/** Max retries for a failed tool (non-PREREQUISITE errors) */
+const MAX_TOOL_RETRIES = 1;
 
 // ── Agent events ──────────────────────────────────────────────────────────────
 
@@ -273,6 +285,48 @@ function extractAssistantMessage(response: unknown): OpenAIMessage | null {
   return message ?? null;
 }
 
+// ── Tool execution with timeout ──────────────────────────────────────────────
+
+async function executeToolWithTimeout(
+  name: string,
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+  timeoutMs: number = TOOL_TIMEOUT_MS,
+): Promise<unknown> {
+  return Promise.race([
+    executeAgentTool(name, args, ctx),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`TOOL_TIMEOUT: ${name} exceeded ${timeoutMs}ms limit`)), timeoutMs),
+    ),
+  ]);
+}
+
+// ── Dynamic hop calculation ──────────────────────────────────────────────────
+
+function estimateMaxHops(userText: string): number {
+  const DEFAULT_MAX_HOPS = 10;
+  const HOPS_PER_PLANNED_STEP = 2;
+  const ABSOLUTE_MAX_HOPS = 20;
+
+  const multiStepPatterns = [
+    /比较.*总结|compare.*summar/i,
+    /分析.*报告|analy.*report/i,
+    /审计.*导出|audit.*export/i,
+    /全面|完整|详细|comprehensive|full|detailed/i,
+    /然后.*然后|then.*then/i,
+    /①.*②|1\).*2\)/,
+  ];
+
+  let complexity = 0;
+  for (const p of multiStepPatterns) {
+    if (p.test(userText)) complexity++;
+  }
+  if (userText.length > 200) complexity++;
+  if (userText.length > 500) complexity++;
+
+  return Math.min(DEFAULT_MAX_HOPS + complexity * HOPS_PER_PLANNED_STEP, ABSOLUTE_MAX_HOPS);
+}
+
 // ── AgentSession ──────────────────────────────────────────────────────────────
 
 const APPROVAL_GATED_TOOLS = new Set(['export_vo_excel', 'generate_report']);
@@ -321,6 +375,7 @@ export class AgentSession {
   private onMemoryExtracted: ((memories: ExtractedMemory[]) => void) | null = null;
   private executionTracker: AgentExecutionTracker | null = null;
   private contextManager = new ContextManager();
+  private rateLimiter = new RateLimiter();
 
   constructor(private ctx: ToolContext) {}
 
@@ -364,6 +419,7 @@ export class AgentSession {
   reset() {
     this.messages = [];
     this.contextManager.reset();
+    this.rateLimiter.reset();
   }
 
   getMessages(): readonly OpenAIMessage[] {
@@ -544,28 +600,45 @@ export class AgentSession {
   }
 
   async send(userText: string, onEvent: (event: AgentEvent) => void): Promise<string> {
+    // Rate limiting check
+    const rateCheck = this.rateLimiter.check();
+    if (!rateCheck.allowed) {
+      onEvent({ kind: 'error', message: rateCheck.reason });
+      return rateCheck.reason;
+    }
+    this.rateLimiter.record();
+
     const tracker = this.executionTracker;
     const runId = await tracker?.startRun({ request: userText, roleId: this.activeRoleId }) ?? null;
     const userMsg: OpenAIMessage = { role: 'user', content: userText };
     this.messages.push(userMsg);
     this.onPersistMessage?.(userMsg);
 
-    const MAX_HOPS = 10;
+    const maxHops = estimateMaxHops(userText);
     const seenCallKeys = new Set<string>();
+    const toolErrorCounts = new Map<string, number>();
     let prerequisiteFailed = false;
     let toolStep = 0;
     let ledgerStep = 0;
     let consecutiveEmptyHops = 0;
+    let consecutiveErrors = 0;
+    let activePlan: AgentPlan | null = null;
     let turnId: string | null = null;
 
-    for (let hop = 0; hop < MAX_HOPS; hop++) {
-      const isLastHop = hop === MAX_HOPS - 1;
+    for (let hop = 0; hop < maxHops; hop++) {
+      const isLastHop = hop === maxHops - 1;
       const allowTools = !isLastHop && !prerequisiteFailed;
 
       const routedTools = getAvailableTools(this.ctx);
       const routingHint = buildToolRoutingHint(this.ctx);
 
       const sessionContext = this.contextManager.buildContextSummary();
+
+      // Context window management: compress if needed
+      const budget = getBudgetStatus(this.messages);
+      if (budget.needsCompression) {
+        this.messages = compressMessages(this.messages);
+      }
 
       let proxyResult: { response: unknown; credits_balance: number | null; turn_id: string | null };
       try {
@@ -604,23 +677,33 @@ export class AgentSession {
       // Final answer: text with no tool calls
       if (rawText && toolCalls.length === 0) {
         const { cleanText, memories } = parseMemoryExtracts(rawText);
-        if (cleanText) onEvent({ kind: 'assistant_text', text: cleanText });
+        const guarded = guardAgentOutput(cleanText);
+        if (guarded.text) onEvent({ kind: 'assistant_text', text: guarded.text });
         if (memories.length > 0) this.onMemoryExtracted?.(memories);
         if (runId) {
           await tracker?.recordStep(runId, {
             sequenceNo: ++ledgerStep,
             stepType: 'assistant',
             status: 'completed',
-            output: { text: cleanText },
+            output: { text: guarded.text },
           });
-          await tracker?.completeRun(runId, 'completed', cleanText);
+          await tracker?.completeRun(runId, 'completed', guarded.text);
         }
-        return cleanText;
+        return guarded.text;
       }
 
       // Intermediate reasoning (text before tool calls) → emit as thinking
       if (rawText && toolCalls.length > 0) {
-        onEvent({ kind: 'thinking', text: rawText, step: hop + 1, totalSteps: null });
+        const guarded = guardAgentOutput(rawText);
+
+        // Try to extract a plan from first thinking output
+        if (!activePlan) {
+          activePlan = parsePlan(guarded.text);
+        }
+
+        const planStep = activePlan ? activePlan.currentStep + 1 : hop + 1;
+        const planTotal = activePlan ? activePlan.totalSteps : null;
+        onEvent({ kind: 'thinking', text: guarded.text, step: planStep, totalSteps: planTotal });
       }
 
       if (toolCalls.length === 0 && !rawText) {
@@ -634,6 +717,8 @@ export class AgentSession {
         continue;
       }
       consecutiveEmptyHops = 0;
+
+      let hopHadError = false;
 
       for (const tc of toolCalls) {
         const name = tc.function?.name ?? '';
@@ -674,15 +759,43 @@ export class AgentSession {
             }
           }
           if (mayExecute) {
+            // Execute with timeout + retry for transient errors
             try {
-              result = await executeAgentTool(name, executableArgs(args), this.ctx);
+              result = await executeToolWithTimeout(name, executableArgs(args), this.ctx);
             } catch (err) {
-              result = { error: err instanceof Error ? err.message : String(err) };
+              const errMsg = err instanceof Error ? err.message : String(err);
+              const isPrerequisite = errMsg.includes('PREREQUISITE_NOT_MET');
+              const isTimeout = errMsg.includes('TOOL_TIMEOUT');
+              const retryCount = toolErrorCounts.get(callKey) ?? 0;
+
+              if (!isPrerequisite && retryCount < MAX_TOOL_RETRIES) {
+                toolErrorCounts.set(callKey, retryCount + 1);
+                try {
+                  result = await executeToolWithTimeout(name, executableArgs(args), this.ctx,
+                    isTimeout ? TOOL_TIMEOUT_MS * 2 : TOOL_TIMEOUT_MS);
+                } catch (retryErr) {
+                  result = {
+                    error: `${retryErr instanceof Error ? retryErr.message : String(retryErr)} (retried ${retryCount + 1}x)`,
+                  };
+                }
+              } else {
+                result = { error: errMsg };
+              }
             }
           }
         }
 
         this.contextManager.recordToolResult(name, result);
+
+        // Advance plan progress
+        if (activePlan) {
+          const stepIdx = matchToolToStep(activePlan, name);
+          if (stepIdx >= 0) {
+            activePlan = { ...activePlan, currentStep: stepIdx };
+          } else {
+            activePlan = advancePlan(activePlan, name);
+          }
+        }
 
         if (result && typeof result === 'object' && 'error' in result) {
           const errStr = String((result as Record<string, unknown>).error ?? '');
@@ -693,6 +806,7 @@ export class AgentSession {
           ) {
             prerequisiteFailed = true;
           }
+          hopHadError = true;
         }
 
         const durationMs = Math.round(performance.now() - started);
@@ -729,14 +843,23 @@ export class AgentSession {
         const toolMsg: OpenAIMessage = {
           role: 'tool',
           tool_call_id: tc.id,
-          content: JSON.stringify(result),
+          content: truncateToolResult(JSON.stringify(result)),
         };
         this.messages.push(toolMsg);
         this.onPersistMessage?.(toolMsg);
       }
+
+      // Track consecutive error hops — bail if 3 in a row
+      consecutiveErrors = hopHadError ? consecutiveErrors + 1 : 0;
+      if (consecutiveErrors >= 3) {
+        const bailMsg = 'Agent stopped: 3 consecutive hops with tool errors.';
+        onEvent({ kind: 'error', message: bailMsg });
+        if (runId) await tracker?.completeRun(runId, 'failed', bailMsg);
+        return bailMsg;
+      }
     }
 
-    const msg = `Agent completed ${toolStep} tool steps across ${MAX_HOPS} reasoning hops.`;
+    const msg = `Agent completed ${toolStep} tool steps across ${maxHops} reasoning hops.`;
     onEvent({ kind: 'error', message: msg });
     if (runId) await tracker?.completeRun(runId, 'failed', msg);
     return msg;
