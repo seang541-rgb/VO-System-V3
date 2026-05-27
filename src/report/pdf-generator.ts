@@ -81,6 +81,8 @@ export function generateVoPdfReport(results: VoComparisonResults, options: PdfRe
   // ── Commercial Breakdown ────────────────────────────────────────────────────
   const breakdown = buildCommercialBreakdown(results, options.pricingContext);
   const actions = breakdown.actions ?? [];
+  const hasVerifiedPricing = !!options.pricingContext
+    && Object.keys(options.pricingContext.itemsByReference).length > 0;
 
   if (actions.length > 0) {
     const lastY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 100;
@@ -88,21 +90,27 @@ export function generateVoPdfReport(results: VoComparisonResults, options: PdfRe
 
     doc.setFontSize(16);
     doc.text('2. Commercial Impact', margin, startY);
+    if (!hasVerifiedPricing) {
+      doc.setFontSize(9);
+      doc.setTextColor(180, 83, 9);
+      doc.text('Amounts pending: upload and verify project BQ and rate information before valuation.', margin, startY + 7);
+      doc.setTextColor(0, 0, 0);
+    }
 
     const topActions = [...actions]
       .sort((a, b) => Math.abs(b.amount ?? 0) - Math.abs(a.amount ?? 0))
       .slice(0, 20);
 
     autoTable(doc, {
-      startY: startY + 10,
+      startY: startY + (hasVerifiedPricing ? 10 : 14),
       head: [['Action', 'Element', 'Qty', 'Unit', 'Rate (MYR)', 'Amount (MYR)']],
       body: topActions.map((a) => [
         a.action,
         a.component?.qsLabel ?? '',
         typeof a.quantity === 'number' ? a.quantity.toFixed(2) : '',
         a.unit ?? '',
-        typeof a.rate === 'number' ? a.rate.toFixed(2) : 'TBD',
-        typeof a.amount === 'number' ? a.amount.toLocaleString('en', { minimumFractionDigits: 2 }) : 'TBD',
+        hasVerifiedPricing && typeof a.rate === 'number' ? a.rate.toFixed(2) : 'Pending verification',
+        hasVerifiedPricing && typeof a.amount === 'number' ? a.amount.toLocaleString('en', { minimumFractionDigits: 2 }) : 'Pending verification',
       ]),
       theme: 'striped',
       styles: { fontSize: 8 },

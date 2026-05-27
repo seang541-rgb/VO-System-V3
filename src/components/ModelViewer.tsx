@@ -107,7 +107,7 @@ export default function ModelViewer({
           </div>
           <div className="rounded-xl border border-slate-300/80 bg-white/82 px-3 py-2 text-slate-700 shadow-sm backdrop-blur">
             <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Awarded BQ</div>
-            <div className="mt-1 truncate font-semibold text-slate-900">{bqFileName || 'Built-in Test BQ Library'}</div>
+            <div className="mt-1 truncate font-semibold text-slate-900">{bqFileName || 'No BQ uploaded'}</div>
             <div className="mt-1 text-slate-500">{bqItems.length} line items ready</div>
             {bqError && <div className="mt-1 text-red-400">{bqError}</div>}
             {mappingError && <div className="mt-1 text-red-300">{mappingError}</div>}

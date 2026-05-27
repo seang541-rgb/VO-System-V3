@@ -38,6 +38,16 @@ function toolContext(runCompare: ToolContext['runCompare']): ToolContext {
 }
 
 describe('Agent comparison tool routing', () => {
+  it('does not make unverified professional conclusion tools available to the model', () => {
+    const names = getAvailableTools(toolContext(vi.fn())).map((tool) => tool.function.name);
+
+    expect(names).not.toContain('analyze_contract_clause');
+    expect(names).not.toContain('lookup_regulation');
+    expect(names).not.toContain('lookup_measurement_code');
+    expect(names).not.toContain('get_vo_template');
+    expect(names).not.toContain('estimate_cost');
+  });
+
   it('tells the agent to read an attached document before answering from it', () => {
     const ctx = {
       ...toolContext(vi.fn()),
@@ -113,5 +123,22 @@ describe('Agent comparison tool routing', () => {
       'comparison.completed',
       expect.objectContaining({ source: 'agent' }),
     );
+  });
+
+  it('does not present valuation totals without a user-provided BQ context', async () => {
+    const ctx = {
+      ...toolContext(vi.fn()),
+      voResults: comparisonResult(),
+      bqContext: undefined,
+      bqItems: [],
+    };
+
+    const result = await executeAgentTool('summarize_commercial_impact', {}, ctx);
+
+    expect(result).toEqual(expect.objectContaining({
+      pricingStatus: 'requires_user_bq',
+      valuationNotice: expect.stringContaining('BQ'),
+    }));
+    expect((result as { summary: Record<string, unknown> }).summary).not.toHaveProperty('netValue');
   });
 });

@@ -1,16 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
-import { Sparkles, Send, Square, Wrench, Loader2, Brain, Lightbulb, X, ShieldCheck, FileUp, FileText } from 'lucide-react';
-import { AgentSession, type AgentEvent, type OpenAIMessage, type ExtractedMemory } from '../agent/agent-client';
+import { Sparkles, Send, Square, Wrench, Loader2, ShieldCheck, FileUp, FileText } from 'lucide-react';
+import { AgentSession, type AgentEvent, type BillingMode, type OpenAIMessage } from '../agent/agent-client';
 import type { ToolContext } from '../agent/tools';
 import { useCopilotHistory } from '../hooks/useCopilotHistory';
 import { useCopilotConversations } from '../hooks/useCopilotConversations';
-import { useCopilotMemory, type MemoryCategory } from '../hooks/useCopilotMemory';
 import { useAgentRuns } from '../hooks/useAgentRuns';
-import { analyzeWorkspace, type ProactiveSuggestion } from '../agent/proactive-discovery';
 
 interface ChatEntry {
   id: string;
-  kind: 'user' | 'assistant' | 'tool' | 'error' | 'thinking';
+  kind: 'user' | 'assistant' | 'tool' | 'error';
   text: string;
   meta?: string;
 }
@@ -45,14 +43,12 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
   const [streamingText, setStreamingText] = useState('');
   const [activeToolLabel, setActiveToolLabel] = useState<string | null>(null);
   const [agentStep, setAgentStep] = useState(0);
-  const [suggestions, setSuggestions] = useState<ProactiveSuggestion[]>([]);
-  const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set());
+  const [billingMode, setBillingMode] = useState<BillingMode>('metered');
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeConversationRef = useRef<string | null>(null);
 
   const { activeId: activeConvId, create: createConv } = useCopilotConversations(projectId);
   const { persistMessage } = useCopilotHistory(projectId, activeConvId);
-  const { buildMemoryPrompt, addMemory } = useCopilotMemory(userId);
   const { runs, pendingApproval, tracker, decideApproval, bindConversation } = useAgentRuns(projectId, userId, activeConvId);
 
   const effectiveToolContext = useMemo<ToolContext>(() => ({
@@ -71,31 +67,17 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
     bindConversation(activeConvId);
   }, [activeConvId, bindConversation]);
 
-  // Proactive suggestions — recalculate when workspace state changes
-  useEffect(() => {
-    const newSuggestions = analyzeWorkspace(effectiveToolContext)
-      .filter((s) => !dismissedSuggestions.has(s.id));
-    setSuggestions(newSuggestions);
-  }, [effectiveToolContext, dismissedSuggestions]);
-
   useEffect(() => {
     if (!sessionRef.current) {
       sessionRef.current = new AgentSession(effectiveToolContext);
     } else {
       sessionRef.current.updateContext(effectiveToolContext);
     }
-    // Inject memory, persistence, and memory extraction callbacks.
-    sessionRef.current.setMemoryPrompt(buildMemoryPrompt());
     sessionRef.current.setOnPersistMessage((msg: OpenAIMessage) => {
       void persistMessage(msg, activeConversationRef.current);
     });
-    sessionRef.current.setOnMemoryExtracted((memories: ExtractedMemory[]) => {
-      for (const m of memories) {
-        void addMemory(m.category as MemoryCategory, m.content, projectId);
-      }
-    });
     sessionRef.current.setExecutionTracker(tracker);
-  }, [effectiveToolContext, buildMemoryPrompt, persistMessage, addMemory, projectId, tracker]);
+  }, [effectiveToolContext, persistMessage, tracker]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -166,13 +148,9 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
           case 'assistant_delta':
             setStreamingText((current) => current + event.text);
             break;
-          case 'thinking':
-            setStreamingText('');
-            setAgentStep(event.step);
-            if (event.text) pushEntry({ id: newId(), kind: 'thinking', text: event.text, meta: `Step ${event.step}` });
-            break;
           case 'tool_start':
             setStreamingText('');
+            setAgentStep((step) => step + 1);
             setActiveToolLabel(event.name);
             pushEntry({
               id: newId(),
@@ -191,7 +169,8 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
             });
             break;
           case 'credits':
-            if (typeof event.balance === 'number' && onCreditsUpdate) onCreditsUpdate(event.balance);
+            setBillingMode(event.billingMode);
+            if (event.billingMode === 'metered' && typeof event.balance === 'number' && onCreditsUpdate) onCreditsUpdate(event.balance);
             break;
           case 'error':
             setStreamingText('');
@@ -405,52 +384,6 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
           </div>
         )}
 
-        {/* Proactive suggestions */}
-        {entries.length > 0 && suggestions.length > 0 && !busy && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-400/80">
-              <Lightbulb className="h-3 w-3" /> 建议操作
-            </div>
-            {suggestions.slice(0, 3).map((s) => (
-              <div
-                key={s.id}
-                className={`flex items-start gap-2 rounded-xl border px-3 py-2.5 ${
-                  s.priority === 'high'
-                    ? 'border-amber-500/30 bg-amber-500/5'
-                    : 'border-slate-700/50 bg-slate-800/40'
-                }`}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold text-slate-200">{s.title}</div>
-                  <div className="mt-0.5 text-[11px] text-slate-400">{s.description}</div>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {s.action && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDismissedSuggestions((prev) => new Set([...prev, s.id]));
-                        void handleSend(s.action!);
-                      }}
-                      className="rounded-lg bg-blue-600/80 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-500"
-                    >
-                      执行
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setDismissedSuggestions((prev) => new Set([...prev, s.id]))}
-                    className="rounded p-0.5 text-slate-600 hover:text-slate-300"
-                    title="Dismiss"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
         {entries.map((entry) => {
           if (entry.kind === 'user') {
             return (
@@ -467,20 +400,6 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
                 <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tl-sm border border-slate-700 bg-slate-800/80 px-3.5 py-2 text-sm text-slate-100 shadow">
                   {entry.text}
                 </div>
-              </div>
-            );
-          }
-          if (entry.kind === 'thinking') {
-            return (
-              <div key={entry.id} className="flex justify-start">
-                <details className="w-full max-w-[85%] rounded-xl border border-purple-500/30 bg-purple-500/5 px-3 py-1.5 text-xs">
-                  <summary className="flex cursor-pointer items-center gap-2 text-purple-300">
-                    <Brain className="h-3 w-3" />
-                    <span className="font-semibold">{entry.meta ?? 'Thinking'}</span>
-                    <span className="text-slate-500">— Agent 推理中</span>
-                  </summary>
-                  <div className="mt-2 whitespace-pre-wrap text-slate-300">{entry.text}</div>
-                </details>
               </div>
             );
           }
@@ -525,12 +444,10 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
               <div className="text-xs font-semibold text-blue-300">
                 {activeToolLabel
                   ? `Step ${agentStep} · 正在执行: ${activeToolLabel}`
-                  : agentStep > 0
-                    ? `Step ${agentStep} · Agent 推理中…`
-                    : 'Copilot 正在思考…'}
+                  : 'Copilot 正在生成回复…'}
               </div>
               <div className="mt-0.5 text-[11px] text-slate-500">
-                {activeToolLabel ? '工具调用中，请稍候' : '分析任务并规划执行步骤'}
+                {activeToolLabel ? '工具调用中，请稍候' : '正在处理本次请求'}
               </div>
             </div>
           </div>
@@ -595,6 +512,11 @@ export default function CopilotPanel({ toolContext, signedIn, projectId, userId,
           <div className="mt-2 flex items-center gap-1.5 truncate text-[11px] text-emerald-300">
             <FileText className="h-3 w-3 shrink-0" />
             <span className="truncate">{attachedDocument.name}</span>
+          </div>
+        )}
+        {billingMode === 'owner_test_bypass' && (
+          <div className="mt-2 text-[11px] text-emerald-300">
+            测试模式：本次 Copilot 请求不扣 credits。
           </div>
         )}
         <div className="mt-2 text-[11px] text-slate-500">

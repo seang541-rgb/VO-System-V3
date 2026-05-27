@@ -1,6 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { OPENAI_TOOL_DEFINITIONS, executeAgentTool, getAvailableTools, buildToolRoutingHint, type ToolContext } from './tools';
-import { ContextManager } from './context-manager';
+import { executeAgentTool, getAvailableTools, type ToolContext } from './tools';
 
 // ── OpenAI-compatible message types (used by NVIDIA NIM / DeepSeek V4 Pro) ────
 
@@ -23,12 +22,13 @@ export interface OpenAIMessage {
 export type AgentEvent =
   | { kind: 'assistant_text'; text: string }
   | { kind: 'assistant_delta'; text: string }
-  | { kind: 'thinking'; text: string; step: number; totalSteps: number | null }
   | { kind: 'tool_start'; name: string; input: Record<string, unknown> }
   | { kind: 'tool_end'; name: string; result: unknown; durationMs: number }
-  | { kind: 'credits'; balance: number | null }
+  | { kind: 'credits'; balance: number | null; billingMode: BillingMode }
   | { kind: 'stopped'; message: string }
   | { kind: 'error'; message: string };
+
+export type BillingMode = 'metered' | 'owner_test_bypass';
 
 export type AgentEvidenceType =
   | 'comparison'
@@ -62,162 +62,6 @@ export interface AgentExecutionTracker {
   consumeApproval: (runId: string, actionType: string) => Promise<void>;
 }
 
-// ── System prompt ─────────────────────────────────────────────────────────────
-
-const SYSTEM_PROMPT = `You are "VO Copilot", an embedded assistant inside the VO System — a browser-based tool for comparing IFC building models and reading project documents to generate Variation Order (VO) substantiation workbooks for QS / construction professionals.
-
-You help the user by:
-- Answering questions about loaded IFC models (base and revision).
-- Running and interpreting VO comparisons (Added / Deleted / Modified elements).
-- Summarizing the commercial impact in JKR / SMM2 terms (Omissions, Additions, Star Rate, Formwork, EOT).
-- Assessing whether a VO qualifies as a claim under a specific contract clause (analyze_contract_clause).
-- Driving the Excel export when the user asks for it.
-
-Interaction gate (HIGHEST PRIORITY):
-- Greetings, thanks, casual conversation, and questions about your capabilities require NO tool calls. Reply directly.
-- Only inspect IFC data when the user's CURRENT message explicitly asks about model contents, comparison, audit, VO quantities, or report generation.
-- Do not repeat or infer a tool task from earlier conversation history when the current message does not request it.
-
-Agentic workflow (ReAct pattern — FOLLOW THIS):
-You operate in a Think → Act → Observe loop. For each user request:
-1. **Think**: Analyze the request, break it into sub-tasks, and state your plan briefly. For multi-step tasks, list the steps you'll take (e.g. "I'll: ① compare IFC files ② summarize commercial impact ③ check contract clause ④ generate report").
-2. **Act**: Call the appropriate tool for the current step.
-3. **Observe**: Read the tool result, assess if it succeeded, and decide the next step.
-4. **Repeat** Think → Act → Observe until all sub-tasks are complete.
-5. **Synthesize**: Once all data is gathered, produce a final comprehensive answer.
-
-When you have intermediate reasoning (between tool calls), output it as text — the user will see it as your thinking process. This helps them understand what you're doing.
-
-For simple questions (no tools needed), skip the loop and reply directly.
-
-Style:
-- Be concise and practical. Prefer tables or short bullet lists.
-- When you call tools, show your reasoning briefly before calling them.
-- Use the user's preferred language (Chinese / English / mixed) based on their prompt.
-
-Evidence discipline (HIGHEST PRIORITY):
-- Facts about project files, comparison quantities, contract clauses, regulations, measurement rules, templates, or rates are verified only when they are supplied by the user or returned by an appropriate tool.
-- If a lookup tool returns zero matches, no template, or an error, say that the system could not verify the answer. Do NOT fill gaps from general model knowledge, invent citations, or state a number as confirmed.
-- General background knowledge may be offered only when the user explicitly asks for an unverified explanation, and it must be labeled as unverified. It must never be used as a compliance, valuation, or claim conclusion.
-
-Tool failure handling (CRITICAL):
-- If any tool returns an error containing "PREREQUISITE_NOT_MET", STOP calling tools immediately. Do NOT try other tools to "work around" the problem. Reply in plain text and tell the user exactly what action they need to take (upload files, click a button, etc.).
-- Formal deliverables from export_vo_excel or generate_report require recorded human approval. If approval is rejected or unavailable, acknowledge it and do not request another formal output in the same turn.
-- Never call the same tool twice with identical arguments. You may chain up to 8 tools per turn for complex multi-step workflows (e.g. compare_ifc → summarize_commercial_impact → analyze_contract_clause → export_vo_excel).
-- If a tool returns any other error, explain the issue to the user once and ask how to proceed — do not retry unless the user redirects you.
-
-Contract-clause analysis flow:
-- When the user pastes a contract clause and asks whether the VO qualifies as a claim, call analyze_contract_clause with the clause text. The tool will return a structured packet (clauseText + voSnapshot + topCommercialActions + instructions).
-- After the tool returns, you MUST produce a four-field structured assessment in your reply: eligible (yes/no/uncertain), clauseExcerpt (single quoted sentence from the clause), reasoning (3-5 sentences citing concrete VO numbers), recommendedAction (one concrete next step for the QS).
-- Cite specific numbers from voSnapshot (e.g. "Net VO value of MYR X with Y EOT flags"). Never invent contract clause text — only quote what the user pasted.
-- Do not call analyze_contract_clause more than once for the same clause in a row; produce the assessment instead.
-
-Capabilities currently available (12 tools):
-- IFC workflows: query_ifc, compare_ifc, summarize_commercial_impact, audit_ifc, export_vo_excel, generate_report
-- Contract/regulatory: analyze_contract_clause, lookup_regulation, lookup_measurement_code, get_vo_template
-- Cost estimation: estimate_cost
-- Document processing: ocr_document
-
-Tool selection guidance:
-- For "what does Clause X say in JKR/PAM" → use analyze_contract_clause with contractType + clauseNumber (it now fetches from the knowledge base; user does not need to paste the clause).
-- For UBBL / MS / BIM compliance questions ("minimum ceiling height", "MS 1064", "JKR BIM mandate threshold") → use lookup_regulation.
-- For SMM2 / NRM measurement questions ("what is section F", "where does this go in NRM") → use lookup_measurement_code.
-- For VO letter / approval drafts → use get_vo_template, then walk the user through filling fields.
-
-Regulatory answer format (CRITICAL):
-- When lookup_regulation returns multiple matches, do NOT pick blindly. Read every "title" / "title_cn" carefully and choose only a row whose described scenario explicitly fits the user's question (for example, do not substitute a kitchen requirement for a habitable-room question).
-- ALWAYS quote the specific identifier in your reply: "UBBL Part V, By-Law 23" / "MS 1064:2014" / "JKR BIM Mandate 2017 (RM 100M threshold)". Never just say "Part V" without the by-law number.
-- If the user's question is ambiguous and multiple rows could fit, list 2-3 most relevant matches with their by-law numbers and ask the user which scenario they mean (residential / kitchen / bathroom / commercial).
-
-Common multi-step workflows (use these as templates when planning):
-- Full VO analysis: compare_ifc → summarize_commercial_impact → analyze_contract_clause → export_vo_excel / generate_report
-- Quick VO summary: compare_ifc → summarize_commercial_impact
-- Compliance check: lookup_regulation → lookup_measurement_code (if measurement context needed)
-- Audit + comparison: audit_ifc → compare_ifc → summarize_commercial_impact
-- VO letter draft: compare_ifc → summarize_commercial_impact → get_vo_template
-
-Tool dependency chain (the system enforces this automatically — blocked tools are removed from your options):
-- compare_ifc requires both IFC files loaded
-- summarize_commercial_impact / export_vo_excel / analyze_contract_clause / generate_report require compare_ifc to have run
-- audit_ifc requires an active IFC handle in the 3D viewer
-- query_ifc / lookup_regulation / lookup_measurement_code / get_vo_template have no prerequisites
-
-audit_ifc usage note: it operates on whichever IFC is currently in the 3D viewer (the last one loaded). If the user asks to audit the "base" but the "revision" is currently active (or vice versa), the tool returns a PREREQUISITE_NOT_MET error — relay that to the user verbatim.
-
-Memory extraction instructions:
-- At the END of each reply, if the conversation revealed any new user preferences, project-specific insights, or important domain knowledge, append a JSON block wrapped in <memory_extract> tags.
-- Format: <memory_extract>[{"category":"preference|project_insight|domain_knowledge|general","content":"concise fact"}]</memory_extract>
-- Only extract genuinely useful facts, NOT conversation summaries. Examples:
-  - {"category":"preference","content":"User prefers Chinese responses with English technical terms"}
-  - {"category":"project_insight","content":"Project uses PAM 2006 contract, residential 30-storey tower"}
-  - {"category":"domain_knowledge","content":"User's company standard: star rates based on JKR schedule of rates 2023"}
-- If nothing worth remembering, do NOT include the tags.
-- Maximum 3 items per turn. Be selective.`;
-
-// ── Dynamic context builder ──────────────────────────────────────────────────
-
-function buildDynamicContext(ctx: ToolContext): string {
-  const parts: string[] = ['\n\n--- CURRENT WORKSPACE STATE ---'];
-
-  // File status
-  const baseStatus = ctx.baseComponents.length > 0
-    ? `loaded (${ctx.baseComponents.length} elements, file: ${ctx.baseFileName ?? 'unknown'})`
-    : 'not loaded';
-  const revStatus = ctx.revisionComponents.length > 0
-    ? `loaded (${ctx.revisionComponents.length} elements, file: ${ctx.revisionFileName ?? 'unknown'})`
-    : 'not loaded';
-  parts.push(`Base IFC: ${baseStatus}`);
-  parts.push(`Revision IFC: ${revStatus}`);
-
-  // Active viewer
-  if (ctx.activeIfcSlot) {
-    parts.push(`3D Viewer showing: ${ctx.activeIfcSlot}`);
-  }
-
-  // Comparison status
-  if (ctx.voResults) {
-    const r = ctx.voResults;
-    parts.push(`VO Comparison: completed (${r.added.length} added, ${r.deleted.length} deleted, ${r.modified.length} modified)`);
-  } else {
-    parts.push('VO Comparison: not yet run');
-  }
-
-  // BQ status
-  if (ctx.bqItems.length > 0) {
-    parts.push(`BQ Items: ${ctx.bqItems.length} line items loaded`);
-  }
-
-  return parts.join('\n');
-}
-
-// ── Memory extraction helper ─────────────────────────────────────────────────
-
-export interface ExtractedMemory {
-  category: 'preference' | 'project_insight' | 'domain_knowledge' | 'general';
-  content: string;
-}
-
-function parseMemoryExtracts(text: string): { cleanText: string; memories: ExtractedMemory[] } {
-  const regex = /<memory_extract>([\s\S]*?)<\/memory_extract>/g;
-  const memories: ExtractedMemory[] = [];
-  let cleanText = text;
-
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(text)) !== null) {
-    try {
-      const parsed = JSON.parse(match[1]) as ExtractedMemory[];
-      if (Array.isArray(parsed)) {
-        memories.push(...parsed.slice(0, 3));
-      }
-    } catch {
-      // skip malformed JSON
-    }
-    cleanText = cleanText.replace(match[0], '').trim();
-  }
-
-  return { cleanText, memories };
-}
-
 function directConversationReply(userText: string): string | null {
   const normalized = userText
     .trim()
@@ -242,6 +86,29 @@ interface AgentProxyResult {
   response: unknown;
   credits_balance: number | null;
   turn_id: string | null;
+  billing_mode: BillingMode;
+}
+
+interface AgentWorkspaceState {
+  baseLoaded: boolean;
+  revisionLoaded: boolean;
+  baseElementCount: number;
+  revisionElementCount: number;
+  comparisonReady: boolean;
+  hasDocument: boolean;
+  activeIfcSlot: 'base' | 'revision' | null;
+}
+
+function buildWorkspaceState(ctx: ToolContext): AgentWorkspaceState {
+  return {
+    baseLoaded: ctx.baseComponents.length > 0,
+    revisionLoaded: ctx.revisionComponents.length > 0,
+    baseElementCount: ctx.baseComponents.length,
+    revisionElementCount: ctx.revisionComponents.length,
+    comparisonReady: !!ctx.voResults,
+    hasDocument: !!ctx.ocrFile,
+    activeIfcSlot: ctx.activeIfcSlot ?? null,
+  };
 }
 
 interface StreamingMessageDelta {
@@ -289,6 +156,7 @@ async function readStreamResponse(
   const message: OpenAIMessage = { role: 'assistant', content: '' };
   let creditsBalance: number | null = null;
   let turnId: string | null = null;
+  let billingMode: BillingMode = 'metered';
   let buffer = '';
 
   const acceptFrame = (frame: string) => {
@@ -305,6 +173,7 @@ async function readStreamResponse(
     if (eventName === 'meta') {
       creditsBalance = typeof parsed.credits_balance === 'number' ? parsed.credits_balance : null;
       turnId = typeof parsed.turn_id === 'string' ? parsed.turn_id : null;
+      billingMode = parsed.billing_mode === 'owner_test_bypass' ? 'owner_test_bypass' : 'metered';
       return;
     }
     if (eventName === 'error') {
@@ -333,6 +202,7 @@ async function readStreamResponse(
     response: { choices: [{ message }] },
     credits_balance: creditsBalance,
     turn_id: turnId,
+    billing_mode: billingMode,
   };
 }
 
@@ -342,14 +212,12 @@ async function callAgentProxy(
   messages: OpenAIMessage[],
   options: {
     allowTools?: boolean;
-    memoryPrompt?: string;
-    dynamicContext?: string;
-    availableTools?: typeof OPENAI_TOOL_DEFINITIONS;
-    routingHint?: string;
+    availableTools?: ReturnType<typeof getAvailableTools>;
+    workspace: AgentWorkspaceState;
     turnId?: string | null;
     signal?: AbortSignal;
     onTextDelta?: (text: string) => void;
-  } = {},
+  },
 ): Promise<AgentProxyResult> {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
@@ -362,8 +230,9 @@ async function callAgentProxy(
     '';
   const endpoint = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/agent-proxy`;
 
-  const allowTools = options.allowTools !== false;
-  const tools = allowTools ? (options.availableTools ?? OPENAI_TOOL_DEFINITIONS) : [];
+  const enabledTools = options.allowTools === false
+    ? []
+    : (options.availableTools ?? []).map((tool) => tool.function.name);
 
   const res = await fetch(endpoint, {
     method: 'POST',
@@ -375,9 +244,9 @@ async function callAgentProxy(
     },
     body: JSON.stringify({
       messages,
-      tools,
       turn_id: options.turnId ?? null,
-      system: SYSTEM_PROMPT + (options.dynamicContext || '') + (options.routingHint || '') + (options.memoryPrompt || ''),
+      enabled_tools: enabledTools,
+      workspace: options.workspace,
     }),
   });
 
@@ -396,6 +265,7 @@ async function callAgentProxy(
     response: json.response,
     credits_balance: typeof json.credits_balance === 'number' ? json.credits_balance : null,
     turn_id: typeof json.turn_id === 'string' ? json.turn_id : null,
+    billing_mode: json.billing_mode === 'owner_test_bypass' ? 'owner_test_bypass' : 'metered',
   };
 }
 
@@ -550,11 +420,8 @@ function evidenceForTool(name: string, result: unknown): { type: AgentEvidenceTy
 
 export class AgentSession {
   private messages: OpenAIMessage[] = [];
-  private memoryPrompt = '';
   private onPersistMessage: ((msg: OpenAIMessage) => void) | null = null;
-  private onMemoryExtracted: ((memories: ExtractedMemory[]) => void) | null = null;
   private executionTracker: AgentExecutionTracker | null = null;
-  private contextManager = new ContextManager();
   private activeController: AbortController | null = null;
 
   constructor(private ctx: ToolContext) {}
@@ -563,19 +430,9 @@ export class AgentSession {
     this.ctx = ctx;
   }
 
-  /** Set the long-term memory text to append to system prompt */
-  setMemoryPrompt(prompt: string) {
-    this.memoryPrompt = prompt;
-  }
-
   /** Set callback to persist each message to Supabase */
   setOnPersistMessage(cb: (msg: OpenAIMessage) => void) {
     this.onPersistMessage = cb;
-  }
-
-  /** Set callback when memories are extracted from conversation */
-  setOnMemoryExtracted(cb: (memories: ExtractedMemory[]) => void) {
-    this.onMemoryExtracted = cb;
   }
 
   setExecutionTracker(tracker: AgentExecutionTracker | null) {
@@ -590,7 +447,6 @@ export class AgentSession {
   reset() {
     this.stop();
     this.messages = [];
-    this.contextManager.reset();
   }
 
   stop(): boolean {
@@ -698,22 +554,18 @@ export class AgentSession {
       const allowTools = !isLastHop && !prerequisiteFailed;
 
       const routedTools = getAvailableTools(this.ctx);
-      const routingHint = buildToolRoutingHint(this.ctx);
+      const routedToolNames = new Set(routedTools.map((tool) => tool.function.name));
 
-      const sessionContext = this.contextManager.buildContextSummary();
-
-      let proxyResult: { response: unknown; credits_balance: number | null; turn_id: string | null };
+      let proxyResult: AgentProxyResult;
       try {
         proxyResult = await callAgentProxy(this.messages, {
           allowTools,
-          memoryPrompt: this.memoryPrompt,
-          dynamicContext: buildDynamicContext(this.ctx) + sessionContext,
           availableTools: routedTools,
-          routingHint,
+          workspace: buildWorkspaceState(this.ctx),
           turnId,
           signal: controller.signal,
           onTextDelta:
-            blockedReply || unresolvedGroundedLookups.size > 0
+            allowTools || blockedReply || unresolvedGroundedLookups.size > 0
               ? undefined
               : (text) => onEvent({ kind: 'assistant_delta', text }),
         });
@@ -733,7 +585,7 @@ export class AgentSession {
       }
 
       turnId = proxyResult.turn_id ?? turnId;
-      onEvent({ kind: 'credits', balance: proxyResult.credits_balance });
+      onEvent({ kind: 'credits', balance: proxyResult.credits_balance, billingMode: proxyResult.billing_mode });
 
       let assistantMsg = extractAssistantMessage(proxyResult.response);
       if (!assistantMsg) {
@@ -750,6 +602,8 @@ export class AgentSession {
         if (blockedReply) rawText = blockedReply;
         else if (unresolvedGroundedLookups.size > 0) rawText = unverifiedLookupReply(userText);
         assistantMsg = { ...assistantMsg, content: rawText };
+      } else if (toolCalls.length > 0) {
+        assistantMsg = { ...assistantMsg, content: null };
       }
 
       this.messages.push(assistantMsg);
@@ -757,27 +611,21 @@ export class AgentSession {
 
       // Final answer: text with no tool calls
       if (rawText && toolCalls.length === 0) {
-        const { cleanText, memories } = parseMemoryExtracts(rawText);
-        if (cleanText) onEvent({ kind: 'assistant_text', text: cleanText });
-        if (memories.length > 0) this.onMemoryExtracted?.(memories);
+        onEvent({ kind: 'assistant_text', text: rawText });
         if (runId) {
           await tracker?.recordStep(runId, {
             sequenceNo: ++ledgerStep,
             stepType: 'assistant',
             status: 'completed',
-            output: { text: cleanText },
+            output: { text: rawText },
           });
-          await tracker?.completeRun(runId, 'completed', cleanText);
+          await tracker?.completeRun(runId, 'completed', rawText);
         }
         if (this.activeController === controller) this.activeController = null;
-        return cleanText;
+        return rawText;
       }
 
       // Intermediate reasoning (text before tool calls) → emit as thinking
-      if (rawText && toolCalls.length > 0) {
-        onEvent({ kind: 'thinking', text: rawText, step: hop + 1, totalSteps: null });
-      }
-
       if (toolCalls.length === 0 && !rawText) {
         consecutiveEmptyHops++;
         if (consecutiveEmptyHops >= 2) {
@@ -817,6 +665,10 @@ export class AgentSession {
             error:
               'DUPLICATE_TOOL_CALL: this exact tool was already invoked with the same arguments in this turn. STOP calling tools and reply in plain text now.',
           };
+        } else if (!routedToolNames.has(name)) {
+          result = {
+            error: `TOOL_NOT_AVAILABLE: ${name} is not enabled for this workspace or stability phase.`,
+          };
         } else {
           seenCallKeys.add(callKey);
           let mayExecute = true;
@@ -843,8 +695,6 @@ export class AgentSession {
           }
         }
 
-        this.contextManager.recordToolResult(name, result);
-
         const groundedResult = groundedLookupHasEvidence(name, result);
         if (groundedResult !== null) {
           if (groundedResult) unresolvedGroundedLookups.delete(name);
@@ -857,11 +707,17 @@ export class AgentSession {
             errStr.includes('PREREQUISITE_NOT_MET')
             || errStr.includes('APPROVAL_REJECTED')
             || errStr.includes('APPROVAL_UNAVAILABLE')
+            || errStr.includes('TOOL_NOT_AVAILABLE')
           ) {
             prerequisiteFailed = true;
           }
           if (errStr.includes('PREREQUISITE_NOT_MET') && !blockedReply) {
             blockedReply = prerequisiteReply(errStr, userText);
+          }
+          if (errStr.includes('TOOL_NOT_AVAILABLE') && !blockedReply) {
+            blockedReply = /[\u4e00-\u9fff]/u.test(userText)
+              ? '此项能力在当前稳定化阶段尚未开放。我不会在没有正式来源链的情况下给出法规、合同或费率结论。'
+              : 'This capability is not enabled during the current stability phase. I cannot provide a regulation, contract, or pricing conclusion without a formal source chain.';
           }
         }
 

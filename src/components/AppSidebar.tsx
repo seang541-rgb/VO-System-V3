@@ -116,7 +116,7 @@ export default function AppSidebar({
             <div className="flex-1 overflow-hidden">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Awarded BQ</div>
               <div className={`truncate text-xs ${bqItems.length > 0 ? 'text-white' : 'text-slate-400'}`}>
-                {bqFileName || 'Built-in Test BQ Library'}
+                {bqFileName || 'No BQ uploaded'}
               </div>
               <div className="text-[10px] text-slate-500">{bqItems.length} line items ready</div>
             </div>

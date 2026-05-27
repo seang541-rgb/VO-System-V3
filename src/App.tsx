@@ -9,7 +9,7 @@ import {
   buildCommercialBreakdown,
 } from './BimEngine';
 import { exportVoSubstantiationWorkbook } from './vo-report';
-import { DEFAULT_TEST_BQ_ITEMS, parseBqWorkbook, exportBqTemplateWorkbook, normalizeBqUnit, recommendBqMatches } from './bq-tools';
+import { parseBqWorkbook, exportBqTemplateWorkbook, normalizeBqUnit, recommendBqMatches } from './bq-tools';
 import { PROJECT_QS_OVERRIDES } from './qs-project-config';
 import AuthGuard from './components/AuthGuard';
 import AppHeader from './components/AppHeader';
@@ -37,7 +37,6 @@ import {
   buildSystemUnitMismatchMessage,
   formatElementLabel,
   getActionChanges,
-  formatCurrencyValue,
   formatSignedCurrencyValue,
   formatRateValue,
   formatAmountValue,
@@ -49,7 +48,6 @@ import {
   formatCommercialBasis,
   formatCommercialDetail,
   formatActionProtectedQuantity,
-  formatActionProtectedValue,
   formatActionFormworkAlert,
   formatActionStarRate,
   formatActionEotFlag,
@@ -74,8 +72,8 @@ export default function App({ localMode = false }: { localMode?: boolean }) {
   const [v2State, setV2State] = useState<ModelLoadState>('idle');
   const [v1Error, setV1Error] = useState('');
   const [v2Error, setV2Error] = useState('');
-  const [bqItems, setBqItems] = useState<BqLineItem[]>(DEFAULT_TEST_BQ_ITEMS);
-  const [bqFileName, setBqFileName] = useState('Built-in Test BQ Library');
+  const [bqItems, setBqItems] = useState<BqLineItem[]>([]);
+  const [bqFileName, setBqFileName] = useState('No BQ uploaded');
   const [bqError, setBqError] = useState('');
   const [ocrFile, setOcrFile] = useState<File | null>(null);
   const [mappingError, setMappingError] = useState('');
@@ -434,8 +432,12 @@ export default function App({ localMode = false }: { localMode?: boolean }) {
       setSelectedRowKey(null);
       setCompareState('success');
       const commercial = buildCommercialBreakdown(results, buildBqMappingContext(bqItems, labelMappings));
+      const valuationReady = commercial.actions.length > 0 && commercial.summary.pendingRateActions === 0;
+      const valuationStatus = valuationReady
+        ? `Net rated value: ${formatSignedCurrencyValue(commercial.summary.netValue)}. Protected value requires separate verified valuation basis.`
+        : 'Valuation pending: upload and verify project BQ/rate information.';
       setCompareMessage(
-        `Comparison complete. Raw: ${results.modified.length} modified. Commercial: ${commercial.summary.omissions} omissions, ${commercial.summary.additions} additions. Pending rates: ${commercial.summary.pendingRateActions}. Net rated value: ${formatSignedCurrencyValue(commercial.summary.netValue)}. Protected value: ${formatCurrencyValue(results.qsSummary.protectedValue)}.`,
+        `Comparison complete. Raw: ${results.modified.length} modified. Commercial: ${commercial.summary.omissions} omissions, ${commercial.summary.additions} additions. Pending rates: ${commercial.summary.pendingRateActions}. ${valuationStatus}`,
       );
 
       try {
@@ -446,7 +448,7 @@ export default function App({ localMode = false }: { localMode?: boolean }) {
       }
 
       setSysLog(
-        `VO Complete: ${results.added.length} Added, ${results.deleted.length} Deleted, ${results.modified.length} Modified. Commercial: ${commercial.summary.omissions} omissions, ${commercial.summary.additions} additions. Pending rates: ${commercial.summary.pendingRateActions}. Net rated value: ${formatSignedCurrencyValue(commercial.summary.netValue)}.`,
+        `VO Complete: ${results.added.length} Added, ${results.deleted.length} Deleted, ${results.modified.length} Modified. Commercial: ${commercial.summary.omissions} omissions, ${commercial.summary.additions} additions. Pending rates: ${commercial.summary.pendingRateActions}. ${valuationStatus}`,
       );
       toast.success('VO 对比完成');
     } catch (err: unknown) {
@@ -576,6 +578,8 @@ export default function App({ localMode = false }: { localMode?: boolean }) {
   const safeCommercialActions = Array.isArray(commercialBreakdown?.actions)
     ? commercialBreakdown.actions.filter((action): action is VoCommercialAction => Boolean(action?.component))
     : [];
+  const valuationReady = safeCommercialActions.length > 0
+    && safeCommercialActions.every((action) => action.rateStatus === 'rated');
   const resultRows = safeCommercialActions.map((action) => {
     const component = action.component;
     const changes = getActionChanges(action);
@@ -594,7 +598,7 @@ export default function App({ localMode = false }: { localMode?: boolean }) {
             : (action.formworkAlert || action.starRateCandidate || action.counterpart ? 'Counted' : '-'))
         : formatStaticShield(component),
       protectedQty: formatActionProtectedQuantity(action),
-      protectedValue: formatActionProtectedValue(action),
+      protectedValue: action.protectedValue > 0 ? 'Pending verification' : '-',
       alert: formatActionFormworkAlert(action),
       starRate: formatActionStarRate(action),
       eotFlag: formatActionEotFlag(action),
@@ -955,6 +959,7 @@ export default function App({ localMode = false }: { localMode?: boolean }) {
                   totalNetValue={totalNetValue}
                   totalPendingRates={totalPendingRates}
                   totalProtectedValue={totalProtectedValue}
+                  valuationReady={valuationReady}
                   rawModified={voResults?.modified.length ?? 0}
                   totalRatedActions={totalRatedActions}
                   totalHighRiskQuantityItems={totalHighRiskQuantityItems}
