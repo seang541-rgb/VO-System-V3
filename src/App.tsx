@@ -21,6 +21,9 @@ import BQMappingPanel from './components/BQMappingPanel';
 import CopilotPanel from './components/CopilotPanel';
 import AuditPanel from './components/AuditPanel';
 import GuidePage from './components/GuidePage';
+import DwgPanel from './components/DwgPanel';
+import { runDwgTakeoff } from './dwg/dwgEngine';
+import type { DwgTakeoffResult } from './dwg/quantityModel';
 import ViewerErrorBoundary from './components/ViewerErrorBoundary';
 import type { AuditState } from './components/AuditPanel';
 import type { AuditResult } from './audit/types';
@@ -108,6 +111,9 @@ export default function App() {
   const [billingNotice, setBillingNotice] = useState<{ tone: 'success' | 'info'; message: string } | null>(null);
   const [showPaywall, setShowPaywall] = useState(false);
   const [isStartingCheckout, setIsStartingCheckout] = useState(false);
+  const [dwgResult, setDwgResult] = useState<DwgTakeoffResult | null>(null);
+  const [dwgLoading, setDwgLoading] = useState(false);
+  const [dwgError, setDwgError] = useState('');
 
   const { user, signOut, passwordRecovery, updatePassword, dismissPasswordRecovery } = useAuth();
   const [newPassword, setNewPassword] = useState('');
@@ -122,6 +128,7 @@ export default function App() {
   const v1InputRef = useRef<HTMLInputElement>(null);
   const v2InputRef = useRef<HTMLInputElement>(null);
   const bqInputRef = useRef<HTMLInputElement>(null);
+  const dwgInputRef = useRef<HTMLInputElement>(null);
   const resultsTableScrollRef = useRef<HTMLDivElement>(null);
   const resultsScrollbarRef = useRef<HTMLDivElement>(null);
   const resultsScrollbarInnerRef = useRef<HTMLDivElement>(null);
@@ -386,6 +393,31 @@ export default function App() {
     }
 
     e.target.value = '';
+  };
+
+  const handleDwgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setActiveTab('dwg');
+    setDwgLoading(true);
+    setDwgError('');
+    setDwgResult(null);
+    setSysLog(`Parsing DWG locally: ${file.name}...`);
+    try {
+      const buffer = await file.arrayBuffer();
+      const result = await runDwgTakeoff(buffer, file.name);
+      setDwgResult(result);
+      setSysLog(`DWG takeoff complete: ${result.items.length} quantity items from ${result.entities} entities.`);
+      toast.success(`DWG 算量完成 · ${result.items.length} 条工程量`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown DWG parse error';
+      setDwgError(message);
+      setSysLog(`DWG takeoff failed: ${message}`);
+      toast.error('DWG 解析失败');
+    } finally {
+      setDwgLoading(false);
+      e.target.value = '';
+    }
   };
 
   const runAudit = useCallback(async () => {
@@ -902,6 +934,7 @@ export default function App() {
       <input ref={v1InputRef} type="file" className="hidden" accept=".ifc,.IFC,application/octet-stream" onChange={(e) => handleIFCUpload(e, 'v1')} disabled={isRunning} />
       <input ref={v2InputRef} type="file" className="hidden" accept=".ifc,.IFC,application/octet-stream" onChange={(e) => handleIFCUpload(e, 'v2')} disabled={isRunning} />
       <input ref={bqInputRef} type="file" className="hidden" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={handleBqUpload} disabled={isRunning} />
+      <input ref={dwgInputRef} type="file" className="hidden" accept=".dwg,.DWG" onChange={handleDwgUpload} />
 
       {/* ── BODY: sidebar + main ───────────────────────────── */}
       <div className="flex">
@@ -1009,6 +1042,13 @@ export default function App() {
           />
         ) : activeTab === 'guide' ? (
           <GuidePage />
+        ) : activeTab === 'dwg' ? (
+          <DwgPanel
+            result={dwgResult}
+            loading={dwgLoading}
+            error={dwgError}
+            onUpload={() => dwgInputRef.current?.click()}
+          />
         ) : (
           <div className="flex flex-col border-t border-slate-700 bg-slate-900 px-4 py-4 lg:px-6">
             <div className="min-h-[36rem]">

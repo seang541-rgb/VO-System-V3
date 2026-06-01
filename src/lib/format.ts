@@ -9,7 +9,7 @@ import { PROJECT_QS_OVERRIDES } from '../qs-project-config';
 
 export type ModelLoadState = 'idle' | 'loading' | 'ready' | 'error';
 export type CompareState = 'idle' | 'running' | 'success' | 'error';
-export type ActiveTab = 'overview' | 'valuation' | 'copilot' | 'audit' | 'guide';
+export type ActiveTab = 'overview' | 'valuation' | 'copilot' | 'audit' | 'guide' | 'dwg';
 
 export function buildBqMappingContext(items: BqLineItem[], labelMappings: Record<string, string>): BqMappingContext | undefined {
   if (items.length === 0) return undefined;
