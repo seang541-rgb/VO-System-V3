@@ -65,93 +65,143 @@ function widthHist(arr: Pt[]) {
   return h;
 }
 
-// Layers that are noise / not part of the building drawing.
-// (Title block + key plan stay out — they clutter; DIM/text now kept.)
-const RENDER_NOISE = new Set(['tblk', 'KEY PLAN', 'DEFPOINTS', 'PATRN']);
+// Layers that are noise / blow up the extent (title block, key plan).
+const RENDER_NOISE = new Set(['tblk', 'KEY PLAN', 'DEFPOINTS']);
 
-// per-layer stroke colour so the rendered drawing reads like the real plan
-function layerColor(layer: string): string {
-  const L = layer.toUpperCase();
-  if (L === 'COLUMN') return '#e0564d';
-  if (L === 'WALL') return '#cbd5e1';
-  if (L === 'BEAM') return '#f59e0b';
-  if (L.startsWith('DOOR')) return '#38bdf8';
-  if (L.startsWith('WIN')) return '#34d399';
-  if (L === 'GRID') return '#475569';
-  if (L.includes('ROOF') || L.includes('TRUSS')) return '#fb923c';
-  if (L === 'SANITARY') return '#22d3ee';
-  if (L === 'RAINWDP' || L === 'RWDP') return '#60a5fa';
-  if (L.includes('STAIR')) return '#a78bfa';
-  return '#3a4a64';
-}
-
-interface Seg { x1: number; y1: number; x2: number; y2: number; layer: string }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function collectSegments(db: any): Seg[] {
-  const segs: Seg[] = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const e of db.entities as any[]) {
-    if (RENDER_NOISE.has(e.layer)) continue;
-    if (e.type === 'LINE' && e.startPoint && e.endPoint) {
-      segs.push({ x1: e.startPoint.x, y1: e.startPoint.y, x2: e.endPoint.x, y2: e.endPoint.y, layer: e.layer });
-    } else if (e.type === 'LWPOLYLINE' && e.vertices) {
-      for (let i = 0; i < e.vertices.length - 1; i++) {
-        const a = e.vertices[i], b = e.vertices[i + 1];
-        segs.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, layer: e.layer });
-      }
-    }
+// AutoCAD Color Index (ACI) → hex. The look of a CAD drawing comes from these.
+const ACI: Record<number, string> = {
+  1: '#FF0000', 2: '#FFFF00', 3: '#00FF00', 4: '#00FFFF', 5: '#0000FF', 6: '#FF00FF',
+  7: '#FFFFFF', 8: '#808080', 9: '#C0C0C0',
+  10: '#FF0000', 11: '#FF7F7F', 12: '#CC0000', 30: '#FF7F00', 31: '#FFBF7F',
+  40: '#FFBF00', 50: '#FFFF00', 60: '#BFFF00', 70: '#7FFF00', 90: '#00FF00',
+  130: '#00FFBF', 150: '#00BFFF', 170: '#007FFF', 190: '#0000FF', 210: '#7F00FF',
+  230: '#FF00BF', 250: '#333333', 251: '#5B5B5B', 252: '#848484', 253: '#ADADAD', 254: '#D6D6D6', 255: '#FFFFFF',
+};
+function aciToHex(idx: number): string {
+  if (ACI[idx]) return ACI[idx];
+  if (idx >= 250 && idx <= 255) return ACI[idx] ?? '#888888';
+  // approximate the colour wheel for unlisted indices
+  if (idx >= 10 && idx < 250) {
+    const hue = ((idx - 10) / 240) * 360;
+    return `hsl(${hue.toFixed(0)},90%,60%)`;
   }
-  return segs;
+  return '#9aa7bd';
 }
 
-// Render the real drawing linework (all building layers) + highlight detected columns.
+interface ColorMap { [layer: string]: number }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildLayerColors(db: any): ColorMap {
+  const map: ColorMap = {};
+  const entries = db.tables?.LAYER?.entries ?? [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const l of entries as any[]) map[l.name] = l.colorIndex ?? 7;
+  return map;
+}
+// resolve an entity's effective colour (BYLAYER 256 / BYBLOCK 0 → layer colour)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function entityHex(e: any, layerColors: ColorMap): string {
+  let ci = e.colorIndex;
+  if (ci == null || ci === 256 || ci === 0) ci = layerColors[e.layer] ?? 7;
+  if (ci === 7) return '#d8dee9'; // white-on-black → light grey so it shows on dark bg
+  return aciToHex(ci);
+}
+
+// Render the drawing faithfully using each entity's ACI colour + all geometry types.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function renderDrawingSvg(db: any, columns: Pt[]): string {
-  const segs = collectSegments(db);
-  if (!segs.length && !columns.length) return '';
+  const layerColors = buildLayerColors(db);
+  // bounds from model-space geometry
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const s of segs) { minX = Math.min(minX, s.x1, s.x2); minY = Math.min(minY, s.y1, s.y2); maxX = Math.max(maxX, s.x1, s.x2); maxY = Math.max(maxY, s.y1, s.y2); }
-  if (!isFinite(minX)) { for (const c of columns) { minX = Math.min(minX, c.x); minY = Math.min(minY, c.y); maxX = Math.max(maxX, c.x); maxY = Math.max(maxY, c.y); } }
-  const mgn = (maxX - minX) * 0.03 || 1000; minX -= mgn; minY -= mgn; maxX += mgn; maxY += mgn;
-  const W = 1600, scale = W / (maxX - minX), H = Math.round((maxY - minY) * scale);
-  const X = (x: number) => ((x - minX) * scale).toFixed(1);
-  const Y = (y: number) => ((maxY - y) * scale).toFixed(1);
-  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="100%"><rect width="${W}" height="${H}" fill="#0b1220"/>`];
-  // group segments by colour for compact output
-  const byColor: Record<string, string[]> = {};
-  for (const s of segs) {
-    const col = layerColor(s.layer);
-    (byColor[col] = byColor[col] || []).push(`M${X(s.x1)} ${Y(s.y1)}L${X(s.x2)} ${Y(s.y2)}`);
-  }
-  for (const [col, paths] of Object.entries(byColor)) {
-    const op = col === '#3a4a64' ? 0.45 : 0.85;
-    const sw = col === '#3a4a64' ? 1.0 : 1.6;
-    parts.push(`<path d="${paths.join('')}" stroke="${col}" stroke-width="${sw}" fill="none" opacity="${op}"/>`);
-  }
-  // text & mtext labels (skip title-block noise layers)
-  const drawingW = maxX - minX;
+  const ext = (x: number, y: number) => { if (x < minX) minX = x; if (y < minY) minY = y; if (x > maxX) maxX = x; if (y > maxY) maxY = y; };
+  // bounds from line/polyline geometry only (small circles/arcs OK, but huge
+  // construction arcs e.g. Ø58m roof arcs must not blow up the extent)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const e of db.entities as any[]) {
-    if (e.type !== 'TEXT' && e.type !== 'MTEXT') continue;
     if (RENDER_NOISE.has(e.layer)) continue;
-    const raw = e.text ?? e.contents ?? e.textValue ?? e.string ?? '';
-    if (!raw) continue;
-    const pos = e.insertionPoint ?? e.startPoint ?? e.position ?? e.center;
-    if (!pos) continue;
-    // strip MTEXT formatting codes like \fArial; {\...} \P
-    const txt = String(raw).replace(/\\[A-Za-z][^;]*;|[{}]|\\P/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
-    if (!txt) continue;
-    const h = (e.height || e.textHeight || 200) * scale;
-    if (h < 3) continue; // too small to read at this zoom
-    const esc = txt.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    parts.push(`<text x="${X(pos.x)}" y="${Y(pos.y)}" font-size="${Math.min(h, drawingW * 0.02).toFixed(1)}" fill="#7c8aa0" opacity="0.7">${esc}</text>`);
+    if (e.type === 'LINE' && e.startPoint && e.endPoint) { ext(e.startPoint.x, e.startPoint.y); ext(e.endPoint.x, e.endPoint.y); }
+    else if ((e.type === 'LWPOLYLINE' || e.type === 'POLYLINE_2D') && e.vertices) for (const v of e.vertices) ext(v.x, v.y);
+    else if (e.type === 'CIRCLE' && e.center && e.radius && e.radius < 2000) { ext(e.center.x - e.radius, e.center.y - e.radius); ext(e.center.x + e.radius, e.center.y + e.radius); }
   }
-  // highlight detected columns on top
+  if (!isFinite(minX)) { for (const c of columns) ext(c.x, c.y); }
+  if (!isFinite(minX)) return '';
+  const mgn = (maxX - minX) * 0.02 || 1000; minX -= mgn; minY -= mgn; maxX += mgn; maxY += mgn;
+  const W = 1800, scale = W / (maxX - minX), H = Math.round((maxY - minY) * scale);
+  const drawingW = maxX - minX;
+  const X = (x: number) => ((x - minX) * scale).toFixed(1);
+  const Y = (y: number) => ((maxY - y) * scale).toFixed(1);
+
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="100%"><rect width="${W}" height="${H}" fill="#000000"/>`];
+  // group line-like paths by colour for compact output
+  const byColor: Record<string, string[]> = {};
+  const pushSeg = (col: string, d: string) => { (byColor[col] = byColor[col] || []).push(d); };
+  const shapes: string[] = []; // circles / ellipses / arcs / text kept separate (need own attrs)
+  const texts: string[] = [];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const e of db.entities as any[]) {
+    if (RENDER_NOISE.has(e.layer)) continue;
+    const hex = entityHex(e, layerColors);
+    switch (e.type) {
+      case 'LINE':
+        if (e.startPoint && e.endPoint) pushSeg(hex, `M${X(e.startPoint.x)} ${Y(e.startPoint.y)}L${X(e.endPoint.x)} ${Y(e.endPoint.y)}`);
+        break;
+      case 'LWPOLYLINE':
+      case 'POLYLINE_2D':
+        if (e.vertices && e.vertices.length > 1) {
+          let d = `M${X(e.vertices[0].x)} ${Y(e.vertices[0].y)}`;
+          for (let i = 1; i < e.vertices.length; i++) d += `L${X(e.vertices[i].x)} ${Y(e.vertices[i].y)}`;
+          if (e.closed) d += 'Z';
+          pushSeg(hex, d);
+        }
+        break;
+      case 'CIRCLE':
+        if (e.center && e.radius) shapes.push(`<circle cx="${X(e.center.x)}" cy="${Y(e.center.y)}" r="${(e.radius*scale).toFixed(1)}" fill="none" stroke="${hex}" stroke-width="0.8"/>`);
+        break;
+      case 'ARC':
+        if (e.center && e.radius != null) {
+          const a0 = e.startAngle ?? 0, a1 = e.endAngle ?? Math.PI * 2;
+          let sweep = a1 - a0; if (sweep < 0) sweep += Math.PI * 2;
+          const large = sweep > Math.PI ? 1 : 0;
+          const x0 = e.center.x + e.radius * Math.cos(a0), y0 = e.center.y + e.radius * Math.sin(a0);
+          const x1 = e.center.x + e.radius * Math.cos(a1), y1 = e.center.y + e.radius * Math.sin(a1);
+          const rr = (e.radius * scale).toFixed(1);
+          // y flipped → sweep flag flips to 1
+          shapes.push(`<path d="M${X(x0)} ${Y(y0)}A${rr} ${rr} 0 ${large} 1 ${X(x1)} ${Y(y1)}" fill="none" stroke="${hex}" stroke-width="0.8"/>`);
+        }
+        break;
+      case 'ELLIPSE':
+        if (e.center && e.majorAxisEndPoint) {
+          const mx = e.majorAxisEndPoint.x, my = e.majorAxisEndPoint.y;
+          const rmaj = Math.hypot(mx, my) * scale;
+          const rmin = rmaj * (e.axisRatio ?? 1);
+          const rot = -Math.atan2(my, mx) * 180 / Math.PI; // y flipped
+          if (rmaj > 0.5) shapes.push(`<ellipse cx="${X(e.center.x)}" cy="${Y(e.center.y)}" rx="${rmaj.toFixed(1)}" ry="${rmin.toFixed(1)}" fill="none" stroke="${hex}" stroke-width="0.8" transform="rotate(${rot.toFixed(1)} ${X(e.center.x)} ${Y(e.center.y)})"/>`);
+        }
+        break;
+      case 'TEXT':
+      case 'MTEXT': {
+        const raw = e.text ?? e.contents ?? e.textValue ?? e.string ?? '';
+        const pos = e.insertionPoint ?? e.startPoint ?? e.position ?? e.center;
+        if (!raw || !pos) break;
+        const txt = String(raw).replace(/\\[A-Za-z][^;]*;|[{}]|\\P/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 50);
+        const h = (e.height || e.textHeight || 200) * scale;
+        if (!txt || h < 2) break;
+        const esc = txt.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        texts.push(`<text x="${X(pos.x)}" y="${Y(pos.y)}" font-size="${Math.min(h, drawingW * 0.02).toFixed(1)}" fill="${hex}" opacity="0.9">${esc}</text>`);
+        break;
+      }
+      default: break;
+    }
+  }
+
+  for (const [col, ds] of Object.entries(byColor)) parts.push(`<path d="${ds.join('')}" stroke="${col}" stroke-width="0.8" fill="none"/>`);
+  parts.push(shapes.join(''));
+  parts.push(texts.join(''));
+  // highlight detected columns on top (takeoff overlay)
   for (const c of columns) {
-    const color = Math.abs(c.d - 300) < 40 ? '#ff5555' : Math.abs(c.d - 450) < 40 ? '#fde047' : '#22d3ee';
+    const color = Math.abs(c.d - 300) < 40 ? '#ff3b3b' : Math.abs(c.d - 450) < 40 ? '#ffd400' : '#22d3ee';
     const r = Math.max(3, (c.d / 2) * scale);
-    parts.push(`<circle cx="${X(c.x)}" cy="${Y(c.y)}" r="${r.toFixed(1)}" fill="${color}33" stroke="${color}" stroke-width="1.5"/>`);
+    parts.push(`<circle cx="${X(c.x)}" cy="${Y(c.y)}" r="${r.toFixed(1)}" fill="${color}44" stroke="${color}" stroke-width="2"/>`);
   }
   parts.push('</svg>');
   return parts.join('');
