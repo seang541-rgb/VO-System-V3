@@ -1,7 +1,6 @@
 // Browser DWG takeoff engine — ported from dwg-mvp, adapted for browser (no fs).
 // Parses a DWG ArrayBuffer via libredwg-web WASM, runs signature-based takeoff,
 // returns unified QuantityItem[] + an annotated SVG of the column plan.
-import { Dwg_File_Type, LibreDwg } from '@mlightcad/libredwg-web';
 import type { QuantityItem, DwgTakeoffResult } from './quantityModel';
 
 interface Pt { x: number; y: number; d: number; n?: number }
@@ -86,6 +85,8 @@ function renderColumnSvg(plan: Pt[]): string {
 }
 
 export async function runDwgTakeoff(buffer: ArrayBuffer, fileName: string): Promise<DwgTakeoffResult> {
+  // Lazy-load the heavy WASM parser only when a DWG is actually uploaded.
+  const { Dwg_File_Type, LibreDwg } = await import('@mlightcad/libredwg-web');
   const libredwg = await LibreDwg.create('/wasm/');
   const dwg = libredwg.dwg_read_data(buffer, Dwg_File_Type.DWG);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -119,8 +120,8 @@ export async function runDwgTakeoff(buffer: ArrayBuffer, fileName: string): Prom
   const sanCount = sanGroups.reduce((s, g) => s + g.length, 0);
   if (sanCount) items.push({ source: 'dwg', category: '卫生洁具', measureKind: 'count', quantity: sanCount, unit: 'nr', confidence: 'review', needsReview: true, description: 'Sanitary fixtures (type needs QS review)' });
 
-  // ── Rainwater downpipes (circle Ø100) ──
-  const rwdp = dedupColocated(circlesOn(db, 'Rainwdp'), 150).points.filter((c) => Math.abs(c.d - 100) < 40);
+  // ── Rainwater downpipes (circle Ø100) ── minR low: downpipe radius is ~50mm
+  const rwdp = dedupColocated(circlesOn(db, 'Rainwdp', 10), 150).points.filter((c) => Math.abs(c.d - 100) < 40);
   if (rwdp.length) items.push({ source: 'dwg', category: '雨水管 Ø100mm', measureKind: 'count', quantity: rwdp.length, unit: 'nr', confidence: 'high', needsReview: false, description: 'Rainwater downpipe Ø100' });
 
   const annotatedSvg = renderColumnSvg(colPlan);
