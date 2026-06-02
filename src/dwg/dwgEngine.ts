@@ -66,7 +66,8 @@ function widthHist(arr: Pt[]) {
 }
 
 // Layers that are noise / not part of the building drawing.
-const RENDER_NOISE = new Set(['tblk', 'KEY PLAN', 'DEFPOINTS', 'DIM', 'PATRN']);
+// (Title block + key plan stay out — they clutter; DIM/text now kept.)
+const RENDER_NOISE = new Set(['tblk', 'KEY PLAN', 'DEFPOINTS', 'PATRN']);
 
 // per-layer stroke colour so the rendered drawing reads like the real plan
 function layerColor(layer: string): string {
@@ -127,6 +128,24 @@ function renderDrawingSvg(db: any, columns: Pt[]): string {
     const op = col === '#3a4a64' ? 0.45 : 0.85;
     const sw = col === '#3a4a64' ? 1.0 : 1.6;
     parts.push(`<path d="${paths.join('')}" stroke="${col}" stroke-width="${sw}" fill="none" opacity="${op}"/>`);
+  }
+  // text & mtext labels (skip title-block noise layers)
+  const drawingW = maxX - minX;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const e of db.entities as any[]) {
+    if (e.type !== 'TEXT' && e.type !== 'MTEXT') continue;
+    if (RENDER_NOISE.has(e.layer)) continue;
+    const raw = e.text ?? e.contents ?? e.textValue ?? e.string ?? '';
+    if (!raw) continue;
+    const pos = e.insertionPoint ?? e.startPoint ?? e.position ?? e.center;
+    if (!pos) continue;
+    // strip MTEXT formatting codes like \fArial; {\...} \P
+    const txt = String(raw).replace(/\\[A-Za-z][^;]*;|[{}]|\\P/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+    if (!txt) continue;
+    const h = (e.height || e.textHeight || 200) * scale;
+    if (h < 3) continue; // too small to read at this zoom
+    const esc = txt.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    parts.push(`<text x="${X(pos.x)}" y="${Y(pos.y)}" font-size="${Math.min(h, drawingW * 0.02).toFixed(1)}" fill="#7c8aa0" opacity="0.7">${esc}</text>`);
   }
   // highlight detected columns on top
   for (const c of columns) {
