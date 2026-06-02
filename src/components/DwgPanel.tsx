@@ -9,17 +9,36 @@ interface DwgPanelProps {
   onUpload: () => void;
 }
 
+type ReviewState = 'confirmed' | 'rejected';
+
 export default function DwgPanel({ result, loading, error, onUpload }: DwgPanelProps) {
   const [rates, setRates] = useState<Record<number, number>>({});
+  const [reviewStatus, setReviewStatus] = useState<Record<number, ReviewState>>({});
+
+  const isRejected = (i: number) => reviewStatus[i] === 'rejected';
   const total = result
-    ? result.items.reduce((s, _it, i) => s + (rates[i] != null ? result.items[i].quantity * rates[i] : 0), 0)
+    ? result.items.reduce((s, _it, i) => s + (!isRejected(i) && rates[i] != null ? result.items[i].quantity * rates[i] : 0), 0)
     : 0;
 
   const handleExport = () => {
     if (!result) return;
-    const rated = result.items.map((it, i) => ({ ...it, rate: rates[i], amount: rates[i] != null ? it.quantity * rates[i] : undefined }));
+    const rated = result.items
+      .map((it, i) => ({ it, i }))
+      .filter(({ i }) => !isRejected(i)) // rejected items excluded from BoQ
+      .map(({ it, i }) => ({
+        ...it,
+        // confirmed review items are promoted to high confidence in the export
+        confidence: reviewStatus[i] === 'confirmed' ? ('high' as const) : it.confidence,
+        needsReview: reviewStatus[i] === 'confirmed' ? false : it.needsReview,
+        rate: rates[i],
+        amount: rates[i] != null ? it.quantity * rates[i] : undefined,
+      }));
     exportDwgBoq(rated, result.fileName);
   };
+
+  const pendingReviews = result
+    ? result.items.map((it, i) => ({ it, i })).filter(({ it, i }) => it.needsReview && !reviewStatus[i])
+    : [];
 
   return (
     <div className="flex flex-col border-t border-slate-700 bg-slate-900 px-4 py-5 lg:px-6">
@@ -80,10 +99,14 @@ export default function DwgPanel({ result, loading, error, onUpload }: DwgPanelP
                 <tbody>
                   {result.items.map((it, idx) => {
                     const rate = rates[idx];
-                    const amount = rate != null ? it.quantity * rate : null;
+                    const rejected = isRejected(idx);
+                    const confirmed = reviewStatus[idx] === 'confirmed';
+                    const amount = !rejected && rate != null ? it.quantity * rate : null;
+                    const confLabel = rejected ? '已否决' : confirmed ? '已确认' : it.needsReview ? '复核' : '高';
+                    const confColor = rejected ? 'text-slate-500 line-through' : confirmed || !it.needsReview ? 'text-emerald-400' : 'text-amber-400';
                     return (
-                      <tr key={idx} className="border-b border-slate-800">
-                        <td className="py-2 text-slate-200">{it.category}</td>
+                      <tr key={idx} className={`border-b border-slate-800 ${rejected ? 'opacity-40' : ''}`}>
+                        <td className={`py-2 text-slate-200 ${rejected ? 'line-through' : ''}`}>{it.category}</td>
                         <td className="text-slate-100">{it.quantity}</td>
                         <td className="text-slate-400">{it.unit}</td>
                         <td>
@@ -91,12 +114,13 @@ export default function DwgPanel({ result, loading, error, onUpload }: DwgPanelP
                             type="number"
                             value={rate ?? ''}
                             placeholder="0.00"
+                            disabled={rejected}
                             onChange={(e) => setRates((r) => ({ ...r, [idx]: e.target.value === '' ? undefined as unknown as number : Number(e.target.value) }))}
-                            className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-blue-500"
+                            className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-blue-500 disabled:opacity-50"
                           />
                         </td>
                         <td className="text-emerald-300">{amount != null ? amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
-                        <td className={it.needsReview ? 'text-amber-400' : 'text-emerald-400'}>{it.needsReview ? '复核' : '高'}</td>
+                        <td className={confColor}>{confLabel}</td>
                       </tr>
                     );
                   })}
@@ -108,19 +132,23 @@ export default function DwgPanel({ result, loading, error, onUpload }: DwgPanelP
                 </tbody>
               </table>
 
-              {result.items.some((i) => i.needsReview) && (
+              {pendingReviews.length > 0 ? (
                 <div className="mt-4 rounded-lg border border-amber-900/60 bg-amber-950/20 p-3">
-                  <div className="text-xs font-bold text-amber-400">⚠ 待复核 (低置信度)</div>
-                  {result.items.filter((i) => i.needsReview).map((it, idx) => (
-                    <div key={idx} className="mt-2 flex items-center gap-2 text-sm">
+                  <div className="text-xs font-bold text-amber-400">⚠ 待复核 (低置信度) · {pendingReviews.length} 项</div>
+                  {pendingReviews.map(({ it, i }) => (
+                    <div key={i} className="mt-2 flex items-center gap-2 text-sm">
                       <span className="text-slate-300">{it.category} · {it.quantity}{it.unit}</span>
-                      <button className="ml-auto rounded border border-emerald-800 px-2 py-0.5 text-xs text-emerald-300">✓ 确认</button>
-                      <button className="rounded border border-slate-600 px-2 py-0.5 text-xs text-slate-300">✕ 否决</button>
+                      <button onClick={() => setReviewStatus((s) => ({ ...s, [i]: 'confirmed' }))} className="ml-auto rounded border border-emerald-800 px-2 py-0.5 text-xs text-emerald-300 hover:bg-emerald-950/40">✓ 确认</button>
+                      <button onClick={() => setReviewStatus((s) => ({ ...s, [i]: 'rejected' }))} className="rounded border border-slate-600 px-2 py-0.5 text-xs text-slate-300 hover:bg-slate-800">✕ 否决</button>
                     </div>
                   ))}
                   <div className="mt-2 text-[11px] text-slate-500">数量类已自动确认 · 模棱两可的交 QS 拍板,不瞎猜</div>
                 </div>
-              )}
+              ) : result.items.some((i) => i.needsReview) ? (
+                <div className="mt-4 rounded-lg border border-emerald-900/60 bg-emerald-950/20 p-3 text-xs text-emerald-300">
+                  ✓ 所有待复核项已处理 · 确认项计入 BoQ,否决项已排除
+                </div>
+              ) : null}
             </div>
           </div>
         </>

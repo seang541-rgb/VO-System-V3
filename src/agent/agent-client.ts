@@ -53,8 +53,9 @@ Contract-clause analysis flow:
 - Cite specific numbers from voSnapshot (e.g. "Net VO value of MYR X with Y EOT flags"). Never invent contract clause text — only quote what the user pasted.
 - Do not call analyze_contract_clause more than once for the same clause in a row; produce the assessment instead.
 
-Capabilities currently available (9 tools):
+Capabilities currently available:
 - IFC workflows: query_ifc, compare_ifc, summarize_commercial_impact, audit_ifc, export_vo_excel
+- DWG (2D AutoCAD) takeoff: query_dwg_takeoff returns quantities (columns, doors, sanitary, rainwater downpipes) from the most recently uploaded DWG. Use it when the user asks about a DWG drawing or its quantities. High-confidence items are auto-detected; "review" items need QS confirmation. If no DWG is loaded the tool returns PREREQUISITE_NOT_MET; tell the user to upload a .dwg in the "2D Drawing & Takeoff" tab.
 - Contract/regulatory: analyze_contract_clause, lookup_regulation, lookup_measurement_code, get_vo_template
 
 Tool selection guidance:

@@ -916,7 +916,9 @@ export default function App() {
       return handle;
     },
     activeIfcSlot,
-  }), [v1Components, v2Components, voResults, bqItems, labelMappings, v1File, v2File, runCompareForAgent, activeIfcSlot]);
+    dwgItems: dwgResult?.items,
+    dwgFileName: dwgResult?.fileName ?? null,
+  }), [v1Components, v2Components, voResults, bqItems, labelMappings, v1File, v2File, runCompareForAgent, activeIfcSlot, dwgResult]);
 
   return (
     <AuthGuard>

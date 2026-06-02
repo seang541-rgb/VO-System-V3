@@ -8,6 +8,7 @@ import type {
 } from '../BimEngine';
 import { buildCommercialBreakdown } from '../BimEngine';
 import { exportVoSubstantiationWorkbook } from '../vo-report';
+import type { QuantityItem as DwgQuantityItem } from '../dwg/quantityModel';
 import {
   fetchClause,
   fetchVoTemplate,
@@ -108,6 +109,9 @@ export interface ToolContext {
   getActiveIfcHandle?: () => { api: any; modelID: number } | null;
   /** Which slot is in the viewer right now ('base' | 'revision' | null). */
   activeIfcSlot?: 'base' | 'revision' | null;
+  /** Unified quantity items from the most recent DWG takeoff (if any). */
+  dwgItems?: DwgQuantityItem[];
+  dwgFileName?: string | null;
 }
 
 export interface AnthropicToolSchema {
@@ -121,6 +125,15 @@ export interface AnthropicToolSchema {
 }
 
 export const AGENT_TOOL_SCHEMAS: AnthropicToolSchema[] = [
+  {
+    name: 'query_dwg_takeoff',
+    description:
+      'Get the quantity takeoff results from the most recently uploaded DWG (2D AutoCAD drawing). Returns the unified quantity items (columns, doors, sanitary fixtures, rainwater downpipes, etc.) with quantities, units, and confidence. Use this when the user asks about the DWG drawing, its quantities, or wants a takeoff / BoQ summary from the 2D drawing. High-confidence items are auto-detected; "review" items need QS confirmation.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+    },
+  },
   {
     name: 'query_ifc',
     description:
@@ -382,6 +395,29 @@ export async function executeAgentTool(
   ctx: ToolContext,
 ): Promise<unknown> {
   switch (name) {
+    case 'query_dwg_takeoff': {
+      const items = ctx.dwgItems ?? [];
+      if (items.length === 0) {
+        return { error: 'PREREQUISITE_NOT_MET', message: 'No DWG takeoff available. Ask the user to upload a .dwg file in the "2D 图纸 & 算量" tab first.' };
+      }
+      return {
+        drawing: ctx.dwgFileName ?? 'DWG',
+        note: 'Quantities from local 2D DWG takeoff. high = auto-detected, review = needs QS confirmation.',
+        items: items.map((it) => ({
+          category: it.category,
+          quantity: it.quantity,
+          unit: it.unit,
+          measureKind: it.measureKind,
+          confidence: it.confidence,
+          needsReview: it.needsReview,
+        })),
+        totals: {
+          countItems: items.filter((i) => i.measureKind === 'count').length,
+          highConfidence: items.filter((i) => !i.needsReview).length,
+          needReview: items.filter((i) => i.needsReview).length,
+        },
+      };
+    }
     case 'query_ifc': {
       const which = (input.model as WhichModel) ?? 'base';
       const typeFilter = typeof input.typeFilter === 'string' ? input.typeFilter.toLowerCase() : '';
