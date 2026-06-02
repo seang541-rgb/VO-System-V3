@@ -157,6 +157,79 @@ function renderDrawingSvg(db: any, columns: Pt[]): string {
   return parts.join('');
 }
 
+// ── Area helpers ─────────────────────────────────────────────────────────────
+function polygonAreaMm2(verts: { x: number; y: number }[]): number {
+  let a = 0;
+  for (let i = 0; i < verts.length; i++) {
+    const p = verts[i], q = verts[(i + 1) % verts.length];
+    a += p.x * q.y - q.x * p.y;
+  }
+  return Math.abs(a) / 2;
+}
+
+// building footprint via convex hull of column positions → m²
+function footprintAreaM2(pts: Pt[]): number {
+  if (pts.length < 3) return 0;
+  const sorted = pts.map((p) => ({ x: p.x, y: p.y })).sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o: {x:number;y:number}, a: {x:number;y:number}, b: {x:number;y:number}) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower: {x:number;y:number}[] = [];
+  for (const p of sorted) { while (lower.length >= 2 && cross(lower[lower.length-2], lower[lower.length-1], p) <= 0) lower.pop(); lower.push(p); }
+  const upper: {x:number;y:number}[] = [];
+  for (let i = sorted.length - 1; i >= 0; i--) { const p = sorted[i]; while (upper.length >= 2 && cross(upper[upper.length-2], upper[upper.length-1], p) <= 0) upper.pop(); upper.push(p); }
+  return polygonAreaMm2(lower.slice(0, -1).concat(upper.slice(0, -1))) / 1e6;
+}
+
+// largest closed-polyline area on building layers → m²
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function largestSlabAreaM2(db: any): number {
+  let best = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const e of db.entities as any[]) {
+    if (e.type !== 'LWPOLYLINE' || !e.vertices || e.vertices.length < 3) continue;
+    if (!['Building', 'Conc. slab', 'ROOF', 'BOUNDARY'].includes(e.layer)) continue;
+    const aM2 = polygonAreaMm2(e.vertices) / 1e6;
+    if (aM2 > best && aM2 < 100000) best = aM2;
+  }
+  return best;
+}
+
+// ── Wall length (parallel-pair → centerline) within a plan bbox ──────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function wallCenterlineLengthM(db: any, box: { x0: number; y0: number; x1: number; y1: number }): number {
+  const lines: { x1: number; y1: number; x2: number; y2: number }[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const e of db.entities as any[]) {
+    if (e.layer !== 'WALL') continue;
+    if (e.type === 'LINE' && e.startPoint && e.endPoint) lines.push({ x1: e.startPoint.x, y1: e.startPoint.y, x2: e.endPoint.x, y2: e.endPoint.y });
+    else if (e.type === 'LWPOLYLINE' && e.vertices) for (let i = 0; i < e.vertices.length - 1; i++) lines.push({ x1: e.vertices[i].x, y1: e.vertices[i].y, x2: e.vertices[i+1].x, y2: e.vertices[i+1].y });
+  }
+  const inBox = (l: typeof lines[0]) => { const mx=(l.x1+l.x2)/2, my=(l.y1+l.y2)/2; return mx>=box.x0&&mx<=box.x1&&my>=box.y0&&my<=box.y1; };
+  const plan = lines.filter((l) => inBox(l) && Math.hypot(l.x2-l.x1, l.y2-l.y1) >= 300);
+  const len = (l: typeof lines[0]) => Math.hypot(l.x2-l.x1, l.y2-l.y1);
+  const ang = (l: typeof lines[0]) => { let a = Math.atan2(l.y2-l.y1, l.x2-l.x1)*180/Math.PI; return ((a%180)+180)%180; };
+  const perp = (a: typeof lines[0], px: number, py: number) => { const dx=a.x2-a.x1, dy=a.y2-a.y1, L=Math.hypot(dx,dy)||1; return Math.abs((px-a.x1)*dy-(py-a.y1)*dx)/L; };
+  const proj = (a: typeof lines[0], px: number, py: number) => { const dx=a.x2-a.x1, dy=a.y2-a.y1, L2=dx*dx+dy*dy||1; return ((px-a.x1)*dx+(py-a.y1)*dy)/Math.sqrt(L2); };
+  const used = new Array(plan.length).fill(false);
+  let totalMm = 0;
+  for (let i = 0; i < plan.length; i++) {
+    if (used[i]) continue;
+    const a = plan[i], aAng = ang(a);
+    let best = -1, bestOv = 200;
+    for (let j = i + 1; j < plan.length; j++) {
+      if (used[j]) continue;
+      const b = plan[j], da = Math.abs(aAng - ang(b));
+      if (da > 4 && da < 176) continue;
+      const thk = perp(a, (b.x1+b.x2)/2, (b.y1+b.y2)/2);
+      if (thk < 60 || thk > 400) continue;
+      const ta1=proj(a,a.x1,a.y1), ta2=proj(a,a.x2,a.y2), tb1=proj(a,b.x1,b.y1), tb2=proj(a,b.x2,b.y2);
+      const ov = Math.min(Math.max(ta1,ta2), Math.max(tb1,tb2)) - Math.max(Math.min(ta1,ta2), Math.min(tb1,tb2));
+      if (ov > bestOv) { bestOv = ov; best = j; }
+    }
+    if (best >= 0) { used[i] = true; used[best] = true; totalMm += bestOv; }
+  }
+  return totalMm / 1000;
+}
+
 export async function runDwgTakeoff(buffer: ArrayBuffer, fileName: string): Promise<DwgTakeoffResult> {
   // Lazy-load the heavy WASM parser only when a DWG is actually uploaded.
   const { Dwg_File_Type, LibreDwg } = await import('@mlightcad/libredwg-web');
@@ -196,6 +269,24 @@ export async function runDwgTakeoff(buffer: ArrayBuffer, fileName: string): Prom
   // ── Rainwater downpipes (circle Ø100) ── minR low: downpipe radius is ~50mm
   const rwdp = dedupColocated(circlesOn(db, 'Rainwdp', 10), 150).points.filter((c) => Math.abs(c.d - 100) < 40);
   if (rwdp.length) items.push({ source: 'dwg', category: '雨水管 Ø100mm', measureKind: 'count', quantity: rwdp.length, unit: 'nr', confidence: 'high', needsReview: false, description: 'Rainwater downpipe Ø100' });
+
+  // ── Area: building footprint (column hull) ──
+  if (colPlan.length >= 3) {
+    const fp = Math.round(footprintAreaM2(colPlan));
+    if (fp > 0) items.push({ source: 'dwg', category: '建筑底面积 (柱网)', measureKind: 'area', quantity: fp, unit: 'm²', confidence: 'review', needsReview: true, description: 'Building footprint (column-grid hull, GFA estimate)' });
+  }
+  // ── Area: largest slab / floor polygon ──
+  const slab = Math.round(largestSlabAreaM2(db));
+  if (slab > 0) items.push({ source: 'dwg', category: '楼板/屋顶 (最大闭合区)', measureKind: 'area', quantity: slab, unit: 'm²', confidence: 'review', needsReview: true, description: 'Largest closed slab/roof polygon' });
+
+  // ── Length: wall centerline within the column plan ──
+  if (colPlan.length) {
+    let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+    for (const c of colPlan) { bx0 = Math.min(bx0, c.x); by0 = Math.min(by0, c.y); bx1 = Math.max(bx1, c.x); by1 = Math.max(by1, c.y); }
+    const m = 3000;
+    const wallLen = Math.round(wallCenterlineLengthM(db, { x0: bx0 - m, y0: by0 - m, x1: bx1 + m, y1: by1 + m }) * 10) / 10;
+    if (wallLen > 0) items.push({ source: 'dwg', category: '墙 (中心线长)', measureKind: 'length', quantity: wallLen, unit: 'm', confidence: 'review', needsReview: true, description: 'Wall centerline length (paired, plan only)' });
+  }
 
   const annotatedSvg = renderDrawingSvg(db, colDD);
   const sizeMB = buffer.byteLength / 1024 / 1024;

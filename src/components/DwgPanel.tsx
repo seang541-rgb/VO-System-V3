@@ -1,6 +1,50 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import type { WheelEvent as ReactWheelEvent, MouseEvent as ReactMouseEvent } from 'react';
 import type { DwgTakeoffResult } from '../dwg/quantityModel';
 import { exportDwgBoq } from '../dwg/dwgReport';
+
+/** Pan + wheel-zoom wrapper around an inline SVG drawing. */
+function ZoomableSvg({ svg }: { svg: string }) {
+  const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
+  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
+
+  const onWheel = (e: ReactWheelEvent) => {
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    setView((v) => ({ ...v, scale: Math.min(20, Math.max(1, v.scale * factor)) }));
+  };
+  const onDown = (e: ReactMouseEvent) => { drag.current = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y }; };
+  const onMove = (e: ReactMouseEvent) => {
+    if (!drag.current) return;
+    setView((v) => ({ ...v, x: drag.current!.ox + (e.clientX - drag.current!.sx), y: drag.current!.oy + (e.clientY - drag.current!.sy) }));
+  };
+  const onUp = () => { drag.current = null; };
+  const reset = () => setView({ scale: 1, x: 0, y: 0 });
+
+  return (
+    <div className="relative">
+      <div className="absolute right-2 top-2 z-10 flex gap-1">
+        <button onClick={() => setView((v) => ({ ...v, scale: Math.min(20, v.scale * 1.3) }))} className="rounded bg-slate-800/90 px-2 py-0.5 text-xs text-slate-200 hover:bg-slate-700">＋</button>
+        <button onClick={() => setView((v) => ({ ...v, scale: Math.max(1, v.scale / 1.3) }))} className="rounded bg-slate-800/90 px-2 py-0.5 text-xs text-slate-200 hover:bg-slate-700">－</button>
+        <button onClick={reset} className="rounded bg-slate-800/90 px-2 py-0.5 text-xs text-slate-200 hover:bg-slate-700">重置</button>
+      </div>
+      <div
+        className="overflow-hidden rounded-lg border border-slate-700 bg-[#0b1220]"
+        style={{ cursor: drag.current ? 'grabbing' : 'grab', touchAction: 'none' }}
+        onWheel={onWheel}
+        onMouseDown={onDown}
+        onMouseMove={onMove}
+        onMouseUp={onUp}
+        onMouseLeave={onUp}
+      >
+        <div
+          style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transformOrigin: 'center center', transition: drag.current ? 'none' : 'transform 0.08s' }}
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      </div>
+      <div className="mt-1 text-[10px] text-slate-500">滚轮缩放 · 拖拽平移 · {(view.scale).toFixed(1)}×</div>
+    </div>
+  );
+}
 
 interface DwgPanelProps {
   result: DwgTakeoffResult | null;
@@ -81,8 +125,10 @@ export default function DwgPanel({ result, loading, error, onUpload }: DwgPanelP
 
           <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
             <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4">
-              <div className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">柱标注 (红 Ø300 / 黄 Ø450)</div>
-              <div className="overflow-hidden rounded-lg border border-slate-700 bg-[#0b1220]" dangerouslySetInnerHTML={{ __html: result.annotatedSvg || '<div style="padding:2rem;color:#64748b;text-align:center">无柱平面</div>' }} />
+              <div className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">图纸 + 柱标注 (红 Ø300 / 黄 Ø450)</div>
+              {result.annotatedSvg
+                ? <ZoomableSvg svg={result.annotatedSvg} />
+                : <div className="rounded-lg border border-slate-700 bg-[#0b1220] p-8 text-center text-sm text-slate-500">无图纸内容</div>}
             </div>
 
             <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4">
