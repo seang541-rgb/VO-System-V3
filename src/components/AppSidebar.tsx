@@ -193,7 +193,7 @@ export default function AppSidebar({
           <button type="button" onClick={() => onTabChange('dwg')}
             className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${activeTab === 'dwg' ? 'bg-emerald-600/20 text-emerald-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
             <FileBox className={`h-3.5 w-3.5 flex-shrink-0 ${activeTab === 'dwg' ? 'text-emerald-400' : 'text-slate-600'}`} />
-            <span className="text-xs font-semibold">2D 图纸 &amp; 算量</span>
+            <span className="text-xs font-semibold">{t('sidebar.dwg')}</span>
             <span className="ml-auto text-[9px] font-bold text-emerald-500">DWG</span>
           </button>
           <button type="button" onClick={() => onTabChange('guide')}

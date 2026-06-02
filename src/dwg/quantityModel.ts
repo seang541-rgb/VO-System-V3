@@ -5,9 +5,16 @@ export type QuantitySource = 'ifc' | 'dwg';
 export type MeasureKind = 'count' | 'length' | 'area' | 'volume';
 export type Confidence = 'high' | 'review';
 
+/** Translation key for the element kind (resolved in UI via i18n). */
+export type ElementKind =
+  | 'col300' | 'col450' | 'door' | 'sanitary' | 'rwdp'
+  | 'footprint' | 'slab' | 'wall';
+
 export interface QuantityItem {
   source: QuantitySource;
-  category: string;        // 柱 / 门 / 雨水管 ...
+  category: string;        // human label (also used in Excel export / Copilot)
+  kind: ElementKind;       // i18n key for the UI
+  size?: string;           // e.g. '750mm' (appended after the translated kind)
   measureKind: MeasureKind;
   quantity: number;
   unit: string;            // nr / m / m² / m³

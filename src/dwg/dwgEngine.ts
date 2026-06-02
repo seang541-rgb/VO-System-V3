@@ -296,8 +296,8 @@ export async function runDwgTakeoff(buffer: ArrayBuffer, fileName: string): Prom
   const colPlan = colPlans[0] ?? [];
   const d300 = colPlan.filter((c) => Math.abs(c.d - 300) < 40).length;
   const d450 = colPlan.filter((c) => Math.abs(c.d - 450) < 40).length;
-  if (d300) items.push({ source: 'dwg', category: '柱 Ø300mm', measureKind: 'count', quantity: d300, unit: 'nr', confidence: 'high', needsReview: false, description: 'Circular column Ø300' });
-  if (d450) items.push({ source: 'dwg', category: '柱 Ø450mm', measureKind: 'count', quantity: d450, unit: 'nr', confidence: 'high', needsReview: false, description: 'Circular column Ø450' });
+  if (d300) items.push({ source: 'dwg', category: '柱 Ø300mm', kind: 'col300', size: 'Ø300mm', measureKind: 'count', quantity: d300, unit: 'nr', confidence: 'high', needsReview: false, description: 'Circular column Ø300' });
+  if (d450) items.push({ source: 'dwg', category: '柱 Ø450mm', kind: 'col450', size: 'Ø450mm', measureKind: 'count', quantity: d450, unit: 'nr', confidence: 'high', needsReview: false, description: 'Circular column Ø450' });
 
   // ── Doors (swing arc) ──
   const doors = dedupColocated(doorArcs(db), 150).points;
@@ -306,7 +306,7 @@ export async function runDwgTakeoff(buffer: ArrayBuffer, fileName: string): Prom
   if (doorPlan.length) {
     const wh = widthHist(doorPlan);
     for (const [w, c] of Object.entries(wh).sort((a, b) => b[1] - a[1])) {
-      items.push({ source: 'dwg', category: `门 ${w}mm`, measureKind: 'count', quantity: c, unit: 'nr', confidence: 'high', needsReview: false, description: `Door leaf ${w}mm` });
+      items.push({ source: 'dwg', category: `门 ${w}mm`, kind: 'door', size: `${w}mm`, measureKind: 'count', quantity: c, unit: 'nr', confidence: 'high', needsReview: false, description: `Door leaf ${w}mm` });
     }
   }
 
@@ -314,20 +314,20 @@ export async function runDwgTakeoff(buffer: ArrayBuffer, fileName: string): Prom
   const san = dedupColocated(ellipsesOn(db, 'SANITARY'), 500).points;
   const sanGroups = cluster(san, 6000).filter((g) => g.length >= 3);
   const sanCount = sanGroups.reduce((s, g) => s + g.length, 0);
-  if (sanCount) items.push({ source: 'dwg', category: '卫生洁具', measureKind: 'count', quantity: sanCount, unit: 'nr', confidence: 'review', needsReview: true, description: 'Sanitary fixtures (type needs QS review)' });
+  if (sanCount) items.push({ source: 'dwg', category: '卫生洁具', kind: 'sanitary', measureKind: 'count', quantity: sanCount, unit: 'nr', confidence: 'review', needsReview: true, description: 'Sanitary fixtures (type needs QS review)' });
 
   // ── Rainwater downpipes (circle Ø100) ── minR low: downpipe radius is ~50mm
   const rwdp = dedupColocated(circlesOn(db, 'Rainwdp', 10), 150).points.filter((c) => Math.abs(c.d - 100) < 40);
-  if (rwdp.length) items.push({ source: 'dwg', category: '雨水管 Ø100mm', measureKind: 'count', quantity: rwdp.length, unit: 'nr', confidence: 'high', needsReview: false, description: 'Rainwater downpipe Ø100' });
+  if (rwdp.length) items.push({ source: 'dwg', category: '雨水管 Ø100mm', kind: 'rwdp', size: 'Ø100mm', measureKind: 'count', quantity: rwdp.length, unit: 'nr', confidence: 'high', needsReview: false, description: 'Rainwater downpipe Ø100' });
 
   // ── Area: building footprint (column hull) ──
   if (colPlan.length >= 3) {
     const fp = Math.round(footprintAreaM2(colPlan));
-    if (fp > 0) items.push({ source: 'dwg', category: '建筑底面积 (柱网)', measureKind: 'area', quantity: fp, unit: 'm²', confidence: 'review', needsReview: true, description: 'Building footprint (column-grid hull, GFA estimate)' });
+    if (fp > 0) items.push({ source: 'dwg', category: '建筑底面积 (柱网)', kind: 'footprint', measureKind: 'area', quantity: fp, unit: 'm²', confidence: 'review', needsReview: true, description: 'Building footprint (column-grid hull, GFA estimate)' });
   }
   // ── Area: largest slab / floor polygon ──
   const slab = Math.round(largestSlabAreaM2(db));
-  if (slab > 0) items.push({ source: 'dwg', category: '楼板/屋顶 (最大闭合区)', measureKind: 'area', quantity: slab, unit: 'm²', confidence: 'review', needsReview: true, description: 'Largest closed slab/roof polygon' });
+  if (slab > 0) items.push({ source: 'dwg', category: '楼板/屋顶 (最大闭合区)', kind: 'slab', measureKind: 'area', quantity: slab, unit: 'm²', confidence: 'review', needsReview: true, description: 'Largest closed slab/roof polygon' });
 
   // ── Length: wall centerline within the column plan ──
   if (colPlan.length) {
@@ -335,7 +335,7 @@ export async function runDwgTakeoff(buffer: ArrayBuffer, fileName: string): Prom
     for (const c of colPlan) { bx0 = Math.min(bx0, c.x); by0 = Math.min(by0, c.y); bx1 = Math.max(bx1, c.x); by1 = Math.max(by1, c.y); }
     const m = 3000;
     const wallLen = Math.round(wallCenterlineLengthM(db, { x0: bx0 - m, y0: by0 - m, x1: bx1 + m, y1: by1 + m }) * 10) / 10;
-    if (wallLen > 0) items.push({ source: 'dwg', category: '墙 (中心线长)', measureKind: 'length', quantity: wallLen, unit: 'm', confidence: 'review', needsReview: true, description: 'Wall centerline length (paired, plan only)' });
+    if (wallLen > 0) items.push({ source: 'dwg', category: '墙 (中心线长)', kind: 'wall', measureKind: 'length', quantity: wallLen, unit: 'm', confidence: 'review', needsReview: true, description: 'Wall centerline length (paired, plan only)' });
   }
 
   const annotatedSvg = renderDrawingSvg(db, colDD);
