@@ -65,20 +65,74 @@ function widthHist(arr: Pt[]) {
   return h;
 }
 
+// Layers that are noise / not part of the building drawing.
+const RENDER_NOISE = new Set(['tblk', 'KEY PLAN', 'DEFPOINTS', 'DIM', 'PATRN']);
+
+// per-layer stroke colour so the rendered drawing reads like the real plan
+function layerColor(layer: string): string {
+  const L = layer.toUpperCase();
+  if (L === 'COLUMN') return '#e0564d';
+  if (L === 'WALL') return '#cbd5e1';
+  if (L === 'BEAM') return '#f59e0b';
+  if (L.startsWith('DOOR')) return '#38bdf8';
+  if (L.startsWith('WIN')) return '#34d399';
+  if (L === 'GRID') return '#475569';
+  if (L.includes('ROOF') || L.includes('TRUSS')) return '#fb923c';
+  if (L === 'SANITARY') return '#22d3ee';
+  if (L === 'RAINWDP' || L === 'RWDP') return '#60a5fa';
+  if (L.includes('STAIR')) return '#a78bfa';
+  return '#3a4a64';
+}
+
+interface Seg { x1: number; y1: number; x2: number; y2: number; layer: string }
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function renderColumnSvg(plan: Pt[]): string {
-  if (!plan.length) return '';
+function collectSegments(db: any): Seg[] {
+  const segs: Seg[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const e of db.entities as any[]) {
+    if (RENDER_NOISE.has(e.layer)) continue;
+    if (e.type === 'LINE' && e.startPoint && e.endPoint) {
+      segs.push({ x1: e.startPoint.x, y1: e.startPoint.y, x2: e.endPoint.x, y2: e.endPoint.y, layer: e.layer });
+    } else if (e.type === 'LWPOLYLINE' && e.vertices) {
+      for (let i = 0; i < e.vertices.length - 1; i++) {
+        const a = e.vertices[i], b = e.vertices[i + 1];
+        segs.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, layer: e.layer });
+      }
+    }
+  }
+  return segs;
+}
+
+// Render the real drawing linework (all building layers) + highlight detected columns.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function renderDrawingSvg(db: any, columns: Pt[]): string {
+  const segs = collectSegments(db);
+  if (!segs.length && !columns.length) return '';
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const c of plan) { minX = Math.min(minX, c.x); minY = Math.min(minY, c.y); maxX = Math.max(maxX, c.x); maxY = Math.max(maxY, c.y); }
-  const mgn = (maxX - minX) * 0.08 || 1000; minX -= mgn; minY -= mgn; maxX += mgn; maxY += mgn;
-  const W = 800, scale = W / (maxX - minX), H = Math.round((maxY - minY) * scale);
+  for (const s of segs) { minX = Math.min(minX, s.x1, s.x2); minY = Math.min(minY, s.y1, s.y2); maxX = Math.max(maxX, s.x1, s.x2); maxY = Math.max(maxY, s.y1, s.y2); }
+  if (!isFinite(minX)) { for (const c of columns) { minX = Math.min(minX, c.x); minY = Math.min(minY, c.y); maxX = Math.max(maxX, c.x); maxY = Math.max(maxY, c.y); } }
+  const mgn = (maxX - minX) * 0.03 || 1000; minX -= mgn; minY -= mgn; maxX += mgn; maxY += mgn;
+  const W = 1600, scale = W / (maxX - minX), H = Math.round((maxY - minY) * scale);
   const X = (x: number) => ((x - minX) * scale).toFixed(1);
   const Y = (y: number) => ((maxY - y) * scale).toFixed(1);
   const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="100%"><rect width="${W}" height="${H}" fill="#0b1220"/>`];
-  for (const c of plan) {
-    const color = Math.abs(c.d - 300) < 40 ? '#f44' : Math.abs(c.d - 450) < 40 ? '#fd0' : '#0cf';
-    const r = Math.max(4, (c.d / 2) * scale);
-    parts.push(`<circle cx="${X(c.x)}" cy="${Y(c.y)}" r="${r.toFixed(1)}" fill="none" stroke="${color}" stroke-width="2"/>`);
+  // group segments by colour for compact output
+  const byColor: Record<string, string[]> = {};
+  for (const s of segs) {
+    const col = layerColor(s.layer);
+    (byColor[col] = byColor[col] || []).push(`M${X(s.x1)} ${Y(s.y1)}L${X(s.x2)} ${Y(s.y2)}`);
+  }
+  for (const [col, paths] of Object.entries(byColor)) {
+    const op = col === '#3a4a64' ? 0.45 : 0.85;
+    const sw = col === '#3a4a64' ? 1.0 : 1.6;
+    parts.push(`<path d="${paths.join('')}" stroke="${col}" stroke-width="${sw}" fill="none" opacity="${op}"/>`);
+  }
+  // highlight detected columns on top
+  for (const c of columns) {
+    const color = Math.abs(c.d - 300) < 40 ? '#ff5555' : Math.abs(c.d - 450) < 40 ? '#fde047' : '#22d3ee';
+    const r = Math.max(3, (c.d / 2) * scale);
+    parts.push(`<circle cx="${X(c.x)}" cy="${Y(c.y)}" r="${r.toFixed(1)}" fill="${color}33" stroke="${color}" stroke-width="1.5"/>`);
   }
   parts.push('</svg>');
   return parts.join('');
@@ -124,7 +178,7 @@ export async function runDwgTakeoff(buffer: ArrayBuffer, fileName: string): Prom
   const rwdp = dedupColocated(circlesOn(db, 'Rainwdp', 10), 150).points.filter((c) => Math.abs(c.d - 100) < 40);
   if (rwdp.length) items.push({ source: 'dwg', category: '雨水管 Ø100mm', measureKind: 'count', quantity: rwdp.length, unit: 'nr', confidence: 'high', needsReview: false, description: 'Rainwater downpipe Ø100' });
 
-  const annotatedSvg = renderColumnSvg(colPlan);
+  const annotatedSvg = renderDrawingSvg(db, colDD);
   const sizeMB = buffer.byteLength / 1024 / 1024;
   const entities = db.entities.length;
   libredwg.dwg_free(dwg);
