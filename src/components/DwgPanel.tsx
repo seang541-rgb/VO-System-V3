@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import type { DwgTakeoffResult } from '../dwg/quantityModel';
+import { exportDwgBoq } from '../dwg/dwgReport';
 
 interface DwgPanelProps {
   result: DwgTakeoffResult | null;
@@ -8,6 +10,17 @@ interface DwgPanelProps {
 }
 
 export default function DwgPanel({ result, loading, error, onUpload }: DwgPanelProps) {
+  const [rates, setRates] = useState<Record<number, number>>({});
+  const total = result
+    ? result.items.reduce((s, _it, i) => s + (rates[i] != null ? result.items[i].quantity * rates[i] : 0), 0)
+    : 0;
+
+  const handleExport = () => {
+    if (!result) return;
+    const rated = result.items.map((it, i) => ({ ...it, rate: rates[i], amount: rates[i] != null ? it.quantity * rates[i] : undefined }));
+    exportDwgBoq(rated, result.fileName);
+  };
+
   return (
     <div className="flex flex-col border-t border-slate-700 bg-slate-900 px-4 py-5 lg:px-6">
       <div className="mb-4 flex items-center justify-between gap-4">
@@ -54,23 +67,44 @@ export default function DwgPanel({ result, loading, error, onUpload }: DwgPanelP
             </div>
 
             <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4">
-              <div className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">统一工程量表</div>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">统一工程量表 + 定价 (BoQ)</div>
+                <button type="button" onClick={handleExport} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-blue-500">📊 导出 Excel BoQ</button>
+              </div>
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-700 text-[11px] uppercase tracking-wide text-slate-500">
-                    <th className="py-2">构件</th><th>来源</th><th>量</th><th>单位</th><th>置信度</th>
+                    <th className="py-2">构件</th><th>量</th><th>单位</th><th>单价 RM</th><th>金额 RM</th><th>置信</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {result.items.map((it, idx) => (
-                    <tr key={idx} className="border-b border-slate-800">
-                      <td className="py-2 text-slate-200">{it.category}</td>
-                      <td><span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300">DWG</span></td>
-                      <td className="text-slate-100">{it.quantity}</td>
-                      <td className="text-slate-400">{it.unit}</td>
-                      <td className={it.needsReview ? 'text-amber-400' : 'text-emerald-400'}>{it.needsReview ? '复核' : '高'}</td>
-                    </tr>
-                  ))}
+                  {result.items.map((it, idx) => {
+                    const rate = rates[idx];
+                    const amount = rate != null ? it.quantity * rate : null;
+                    return (
+                      <tr key={idx} className="border-b border-slate-800">
+                        <td className="py-2 text-slate-200">{it.category}</td>
+                        <td className="text-slate-100">{it.quantity}</td>
+                        <td className="text-slate-400">{it.unit}</td>
+                        <td>
+                          <input
+                            type="number"
+                            value={rate ?? ''}
+                            placeholder="0.00"
+                            onChange={(e) => setRates((r) => ({ ...r, [idx]: e.target.value === '' ? undefined as unknown as number : Number(e.target.value) }))}
+                            className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-blue-500"
+                          />
+                        </td>
+                        <td className="text-emerald-300">{amount != null ? amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+                        <td className={it.needsReview ? 'text-amber-400' : 'text-emerald-400'}>{it.needsReview ? '复核' : '高'}</td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="border-t-2 border-slate-700">
+                    <td colSpan={4} className="py-2 text-right text-xs font-bold uppercase tracking-wide text-slate-400">合计 Total</td>
+                    <td className="font-black text-white">{total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td></td>
+                  </tr>
                 </tbody>
               </table>
 
