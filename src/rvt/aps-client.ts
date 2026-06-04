@@ -70,7 +70,7 @@ export async function rvtPollUntilDone(
       body: JSON.stringify({ job_id: jobId }),
     });
     const data: RvtStatusResponse = await res.json();
-    if (!res.ok) throw new Error((data as Record<string, string>).error || `Status check failed`);
+    if (!res.ok) throw new Error((data as unknown as Record<string, string>).error || `Status check failed`);
 
     onProgress?.(data.status, data.progress);
 
