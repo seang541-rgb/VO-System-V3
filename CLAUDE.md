@@ -1,7 +1,7 @@
-# VO System — IFC Variation Order SaaS
+# IdeaNest V1 — IFC Audit & VO Copilot
 
 ## Project Overview
-IFC-based Variation Order (VO) comparison and quantity takeoff SaaS platform.
+IFC-based audit, VO comparison, and quantity takeoff platform. Supports IFC, DWG, and RVT files.
 Targeted at Malaysian construction industry — JKR/SMM2 classification standards.
 Dual selling points: (A) instant audit/quantity takeoff, (B) VO comparison with AI copilot.
 
