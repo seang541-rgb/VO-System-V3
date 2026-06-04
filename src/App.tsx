@@ -24,6 +24,9 @@ import GuidePage from './components/GuidePage';
 import DwgPanel from './components/DwgPanel';
 import { runDwgTakeoff } from './dwg/dwgEngine';
 import type { DwgTakeoffResult } from './dwg/quantityModel';
+import RvtAuditPanel from './components/RvtAuditPanel';
+import type { RvtConvertStatus } from './rvt/types';
+import { rvtConvertInit, rvtUploadToAps, rvtConvertStart, rvtPollUntilDone, rvtDownloadIfc } from './rvt/aps-client';
 import ViewerErrorBoundary from './components/ViewerErrorBoundary';
 import type { AuditState } from './components/AuditPanel';
 import type { AuditResult } from './audit/types';
@@ -114,6 +117,16 @@ export default function App() {
   const [dwgResult, setDwgResult] = useState<DwgTakeoffResult | null>(null);
   const [dwgLoading, setDwgLoading] = useState(false);
   const [dwgError, setDwgError] = useState('');
+
+  const [rvtFile, setRvtFile] = useState<File | null>(null);
+  const [rvtUrn, setRvtUrn] = useState<string | null>(null);
+  const [rvtConvertStatus, setRvtConvertStatus] = useState<RvtConvertStatus>('idle');
+  const [rvtConvertProgress, setRvtConvertProgress] = useState('');
+  const [rvtConvertError, setRvtConvertError] = useState('');
+  const [rvtAuditResult, setRvtAuditResult] = useState<AuditResult | null>(null);
+  const [rvtAuditDurationMs, setRvtAuditDurationMs] = useState(0);
+  const rvtInputRef = useRef<HTMLInputElement>(null);
+  const RVT_CREDIT_COST = 3;
 
   const { user, signOut, passwordRecovery, updatePassword, dismissPasswordRecovery } = useAuth();
   const [newPassword, setNewPassword] = useState('');
@@ -419,6 +432,95 @@ export default function App() {
       e.target.value = '';
     }
   };
+
+  const handleRvtUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 100 * 1024 * 1024) {
+      toast.error('RVT file exceeds 100MB limit');
+      e.target.value = '';
+      return;
+    }
+    setRvtFile(file);
+    setRvtUrn(null);
+    setRvtConvertStatus('idle');
+    setRvtConvertError('');
+    setRvtAuditResult(null);
+    setActiveTab('rvt');
+    setSysLog(`RVT file loaded: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`);
+    e.target.value = '';
+  };
+
+  const runRvtAudit = useCallback(async () => {
+    if (!rvtFile || !user) return;
+
+    setRvtConvertStatus('credit_check');
+    setRvtConvertError('');
+    setRvtAuditResult(null);
+    const t0 = performance.now();
+
+    try {
+      setRvtConvertStatus('uploading');
+      setSysLog('RVT: Initializing cloud conversion...');
+      const init = await rvtConvertInit(rvtFile.name, rvtFile.size);
+
+      if (init.credits_balance !== null) setCreditsBalance(init.credits_balance);
+
+      setSysLog('RVT: Uploading to Autodesk cloud...');
+      await rvtUploadToAps(init.upload_url, rvtFile);
+
+      setRvtConvertStatus('converting');
+      setSysLog('RVT: Starting RVT → IFC conversion...');
+      const start = await rvtConvertStart(init.job_id, init.upload_key, init.bucket, init.object_key);
+
+      setRvtUrn(start.urn);
+
+      await rvtPollUntilDone(init.job_id, (status, progress) => {
+        setRvtConvertProgress(progress);
+        setSysLog(`RVT: Converting... ${progress}`);
+      });
+
+      setRvtConvertStatus('downloading');
+      setSysLog('RVT: Downloading converted IFC...');
+      const ifcBuffer = await rvtDownloadIfc(init.job_id);
+
+      setSysLog('RVT: Running audit on converted IFC...');
+      const engine = ensureEngine();
+      if (!engine) throw new Error('BIM engine not available');
+
+      await engine.loadIfcModel(ifcBuffer, (p) => {
+        setSysLog(`RVT: Loading converted IFC... ${Math.round(p * 100)}%`);
+      });
+
+      const handle = engine.getIfcHandle();
+      if (!handle) throw new Error('IFC model failed to load from converted file');
+
+      const { runAudit: doAudit } = await import('./audit/extractor');
+      const result = doAudit({ api: handle.api, modelID: handle.modelID });
+      const duration = performance.now() - t0;
+
+      setRvtAuditResult(result);
+      setRvtAuditDurationMs(duration);
+      setRvtConvertStatus('done');
+      setSysLog(`RVT audit complete: ${result.records.length} elements in ${(duration / 1000).toFixed(1)}s`);
+      toast.success(`RVT 审计完成 · ${result.records.length} 个构件`);
+
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setRvtConvertError(message);
+      setRvtConvertStatus('error');
+      setSysLog(`RVT audit failed: ${message}`);
+
+      if (message.includes('Insufficient credits') || message.includes('NO_CREDITS')) {
+        setShowPaywall(true);
+        toast.error(t('rvt.insufficientCredits'));
+      } else {
+        toast.error('RVT 审计失败');
+      }
+
+      await refreshCredits();
+    }
+  }, [rvtFile, user, ensureEngine, t, refreshCredits, setCreditsBalance]);
 
   const runAudit = useCallback(async () => {
     const engine = ensureEngine();
@@ -937,6 +1039,7 @@ export default function App() {
       <input ref={v2InputRef} type="file" className="hidden" accept=".ifc,.IFC,application/octet-stream" onChange={(e) => handleIFCUpload(e, 'v2')} disabled={isRunning} />
       <input ref={bqInputRef} type="file" className="hidden" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={handleBqUpload} disabled={isRunning} />
       <input ref={dwgInputRef} type="file" className="hidden" accept=".dwg,.DWG" onChange={handleDwgUpload} />
+      <input ref={rvtInputRef} type="file" className="hidden" accept=".rvt,.RVT" onChange={handleRvtUpload} />
 
       {/* ── BODY: sidebar + main ───────────────────────────── */}
       <div className="flex">
@@ -954,6 +1057,7 @@ export default function App() {
           onTabChange={setActiveTab}
           onRunAudit={runAudit}
           auditState={auditState}
+          onUploadRvt={() => rvtInputRef.current?.click()}
         />
 
         <main className="min-w-0 flex-1 overflow-x-hidden">
@@ -1050,6 +1154,20 @@ export default function App() {
             loading={dwgLoading}
             error={dwgError}
             onUpload={() => dwgInputRef.current?.click()}
+          />
+        ) : activeTab === 'rvt' ? (
+          <RvtAuditPanel
+            rvtFile={rvtFile}
+            rvtUrn={rvtUrn}
+            convertStatus={rvtConvertStatus}
+            convertProgress={rvtConvertProgress}
+            convertError={rvtConvertError}
+            auditResult={rvtAuditResult}
+            auditDurationMs={rvtAuditDurationMs}
+            creditCost={RVT_CREDIT_COST}
+            onUpload={() => rvtInputRef.current?.click()}
+            onRunAudit={runRvtAudit}
+            canRunAudit={!!rvtFile && rvtConvertStatus === 'idle' && !!user}
           />
         ) : (
           <div className="flex flex-col border-t border-slate-700 bg-slate-900 px-4 py-4 lg:px-6">

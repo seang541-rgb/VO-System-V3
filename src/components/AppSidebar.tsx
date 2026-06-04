@@ -42,6 +42,7 @@ interface AppSidebarProps {
   onTabChange: (tab: ActiveTab) => void;
   onRunAudit: () => void;
   auditState: AuditState;
+  onUploadRvt: () => void;
 }
 
 export default function AppSidebar({
@@ -51,7 +52,7 @@ export default function AppSidebar({
   isRunning, isExporting, activeTab,
   onUploadBase, onUploadRevision, onUploadBq,
   onRunCompare, onExportExcel, onExportBqTemplate,
-  onTabChange, onRunAudit, auditState,
+  onTabChange, onRunAudit, auditState, onUploadRvt,
 }: AppSidebarProps) {
   const { t } = useLang();
   const canCompare = v1State === 'ready' && v2State === 'ready' && !isRunning;
@@ -195,6 +196,16 @@ export default function AppSidebar({
             <FileBox className={`h-3.5 w-3.5 flex-shrink-0 ${activeTab === 'dwg' ? 'text-emerald-400' : 'text-slate-600'}`} />
             <span className="text-xs font-semibold">{t('sidebar.dwg')}</span>
             <span className="ml-auto text-[9px] font-bold text-emerald-500">DWG</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onTabChange('rvt')}
+            className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-semibold ${
+              activeTab === 'rvt' ? 'bg-blue-600/20 text-blue-300' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+            }`}
+          >
+            <FileBox className="h-3.5 w-3.5" />
+            {t('sidebar.rvtAudit')}
           </button>
           <button type="button" onClick={() => onTabChange('guide')}
             className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${activeTab === 'guide' ? 'bg-emerald-600/20 text-emerald-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
