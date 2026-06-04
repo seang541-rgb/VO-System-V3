@@ -391,4 +391,18 @@ export const zh: Record<string, string> = {
   'dwg.cat.footprint': '建筑底面积 (柱网)',
   'dwg.cat.slab': '楼板/屋顶 (最大闭合区)',
   'dwg.cat.wall': '墙 (中心线长)',
+
+  // ── RVT ──
+  'rvt.title': 'RVT 审计',
+  'rvt.uploadHint': '上传 Revit (.rvt) 文件进行 3D 预览和云端审计',
+  'rvt.uploadBtn': '上传 RVT',
+  'rvt.viewerWaiting': '上传 .rvt 文件开始预览',
+  'rvt.viewerLoading': '加载 3D 模型中...',
+  'rvt.auditCost': '审计消耗 {cost} 积分',
+  'rvt.runAudit': '运行 RVT 审计',
+  'rvt.conversionFailed': 'RVT 转换失败',
+  'rvt.auditComplete': '审计完成：{count} 个构件，耗时 {duration}s',
+  'rvt.insufficientCredits': 'RVT 审计积分不足，请充值。',
+  'sidebar.rvtAudit': 'RVT 审计',
+  'sidebar.rvtAuditSub': 'Revit 云端审计',
 };

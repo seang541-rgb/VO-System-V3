@@ -391,4 +391,18 @@ export const en: Record<string, string> = {
   'dwg.cat.footprint': 'Building footprint (column grid)',
   'dwg.cat.slab': 'Slab/roof (largest closed area)',
   'dwg.cat.wall': 'Wall (centerline length)',
+
+  // ── RVT ──
+  'rvt.title': 'RVT Audit',
+  'rvt.uploadHint': 'Upload a Revit (.rvt) file for 3D preview and cloud-powered audit',
+  'rvt.uploadBtn': 'Upload RVT',
+  'rvt.viewerWaiting': 'Upload a .rvt file to preview',
+  'rvt.viewerLoading': 'Loading 3D model...',
+  'rvt.auditCost': 'Audit costs {cost} credits',
+  'rvt.runAudit': 'Run RVT Audit',
+  'rvt.conversionFailed': 'RVT conversion failed',
+  'rvt.auditComplete': 'Audit complete: {count} elements in {duration}s',
+  'rvt.insufficientCredits': 'Not enough credits for RVT audit. Please top up.',
+  'sidebar.rvtAudit': 'RVT Audit',
+  'sidebar.rvtAuditSub': 'Revit cloud audit',
 };
