@@ -4,6 +4,12 @@ export const zh: Record<string, string> = {
   'header.credits': '积分',
   'header.signOut': '退出登录',
   'header.banner': '原 VO System 已升级为 Idea Nest，所有 VO 比对、索赔分析、Excel 导出功能都在 Copilot 里直接调用。',
+  'header.tab.copilot': 'Copilot',
+  'header.tab.overview': '3D & VO',
+  'header.tab.audit': '审计',
+  'header.tab.valuation': 'BQ',
+  'header.tab.dwg': 'DWG',
+  'header.tab.rvt': 'RVT',
 
   // ── Sidebar: Workspace ──
   'sidebar.workspace': '工作区',

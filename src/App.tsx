@@ -33,7 +33,7 @@ import toast from 'react-hot-toast';
 export default function App() {
   const { t } = useLang();
   const [activeTab, setActiveTab] = useState<ActiveTab>('copilot');
-  const [showLegacyBanner, setShowLegacyBanner] = useState(true);
+
 
   // ── Auth & credits ────────────────────────────────────────────────────
   const { user, signOut, passwordRecovery, updatePassword, dismissPasswordRecovery } = useAuth();
@@ -204,9 +204,9 @@ export default function App() {
       <AppHeader
         creditsBalance={creditsBalance}
         creditsLoading={creditsLoading}
-        showLegacyBanner={showLegacyBanner}
-        onCloseBanner={() => setShowLegacyBanner(false)}
         onSignOut={signOut}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
       />
       {/* Hidden file inputs (triggered from sidebar buttons) */}
       <input ref={v1InputRef} type="file" className="hidden" accept=".ifc,.IFC,application/octet-stream" onChange={(e) => handleIFCUpload(e, 'v1')} disabled={isRunning} />
@@ -221,14 +221,13 @@ export default function App() {
           v1File={v1File} v2File={v2File} bqFileName={bqFileName}
           v1Components={v1Components} v2Components={v2Components} bqItems={bqItems}
           v1State={v1State} v2State={v2State} voResults={voResults}
-          isRunning={isRunning} isExporting={isExporting} activeTab={activeTab}
+          isRunning={isRunning} isExporting={isExporting}
           onUploadBase={() => v1InputRef.current?.click()}
           onUploadRevision={() => v2InputRef.current?.click()}
           onUploadBq={() => bqInputRef.current?.click()}
           onRunCompare={runVOComparison}
           onExportExcel={exportWorkbook}
           onExportBqTemplate={exportBqTemplateWorkbook}
-          onTabChange={setActiveTab}
           onRunAudit={runAudit}
           auditState={auditState}
           onUploadRvt={() => rvtInputRef.current?.click()}

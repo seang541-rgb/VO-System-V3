@@ -4,19 +4,14 @@ import {
   FileText,
   Play,
   Download,
-  Sparkles,
-  Layers3,
-  ClipboardList,
   CheckCircle2,
   Circle,
   Loader2,
   AlertCircle,
   Zap,
-  BarChart3,
-  BookOpen,
 } from 'lucide-react';
 import type { BimComponent, BqLineItem, VoComparisonResults } from '../BimEngine';
-import type { ActiveTab, ModelLoadState } from '../lib/format';
+import type { ModelLoadState } from '../lib/format';
 import type { AuditState } from './AuditPanel';
 import { useLang } from '../i18n/LanguageContext';
 
@@ -32,14 +27,12 @@ interface AppSidebarProps {
   voResults: VoComparisonResults | null;
   isRunning: boolean;
   isExporting: boolean;
-  activeTab: ActiveTab;
   onUploadBase: () => void;
   onUploadRevision: () => void;
   onUploadBq: () => void;
   onRunCompare: () => void;
   onExportExcel: () => void;
   onExportBqTemplate: () => void;
-  onTabChange: (tab: ActiveTab) => void;
   onRunAudit: () => void;
   auditState: AuditState;
   onUploadRvt: () => void;
@@ -49,21 +42,17 @@ export default function AppSidebar({
   v1File, v2File, bqFileName,
   v1Components, v2Components, bqItems,
   v1State, v2State, voResults,
-  isRunning, isExporting, activeTab,
+  isRunning, isExporting,
   onUploadBase, onUploadRevision, onUploadBq,
   onRunCompare, onExportExcel, onExportBqTemplate,
-  onTabChange, onRunAudit, auditState, onUploadRvt,
+  onRunAudit, auditState, onUploadRvt,
 }: AppSidebarProps) {
   const { t } = useLang();
   const canCompare = v1State === 'ready' && v2State === 'ready' && !isRunning;
   const canAudit = (v1State === 'ready' || v2State === 'ready') && auditState !== 'running';
-  const showCopilotTab = activeTab === 'copilot';
-  const showOverviewTab = activeTab === 'overview';
-  const showValuationTab = activeTab === 'valuation';
-  const showAuditTab = activeTab === 'audit';
 
   return (
-    <aside className="sticky top-[57px] flex h-[calc(100vh-57px)] w-72 flex-col gap-4 overflow-y-auto border-r border-slate-700 bg-slate-900 px-4 py-4">
+    <aside className="sticky top-[48px] flex h-[calc(100vh-48px)] w-72 flex-col gap-4 overflow-y-auto border-r border-slate-700 bg-slate-900 px-4 py-4">
       {/* Workspace files */}
       <section>
         <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{t('sidebar.workspace')}</div>
@@ -163,54 +152,6 @@ export default function AppSidebar({
               <div className="text-xs font-semibold">{t('sidebar.bqTemplate')}</div>
               <div className="truncate text-[10px] text-slate-500">{t('sidebar.bqTemplateSub')}</div>
             </div>
-          </button>
-        </div>
-      </section>
-
-      {/* Views */}
-      <section>
-        <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{t('sidebar.views')}</div>
-        <div className="space-y-1">
-          <button type="button" onClick={() => onTabChange('copilot')}
-            className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${showCopilotTab ? 'bg-blue-600/20 text-blue-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
-            <Sparkles className={`h-3.5 w-3.5 flex-shrink-0 ${showCopilotTab ? 'text-blue-400' : 'text-slate-600'}`} />
-            <span className="text-xs font-semibold">{t('sidebar.copilot')}</span>
-          </button>
-          <button type="button" onClick={() => onTabChange('audit')}
-            className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${showAuditTab ? 'bg-amber-600/20 text-amber-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
-            <BarChart3 className={`h-3.5 w-3.5 flex-shrink-0 ${showAuditTab ? 'text-amber-400' : 'text-slate-600'}`} />
-            <span className="text-xs font-semibold">{t('sidebar.auditReport')}</span>
-          </button>
-          <button type="button" onClick={() => onTabChange('overview')}
-            className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${showOverviewTab ? 'bg-blue-600/20 text-blue-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
-            <Layers3 className={`h-3.5 w-3.5 flex-shrink-0 ${showOverviewTab ? 'text-blue-400' : 'text-slate-600'}`} />
-            <span className="text-xs font-semibold">{t('sidebar.3dModel')}</span>
-          </button>
-          <button type="button" onClick={() => onTabChange('valuation')}
-            className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${showValuationTab ? 'bg-blue-600/20 text-blue-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
-            <ClipboardList className={`h-3.5 w-3.5 flex-shrink-0 ${showValuationTab ? 'text-blue-400' : 'text-slate-600'}`} />
-            <span className="text-xs font-semibold">{t('sidebar.bqMapping')}</span>
-          </button>
-          <button type="button" onClick={() => onTabChange('dwg')}
-            className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${activeTab === 'dwg' ? 'bg-emerald-600/20 text-emerald-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
-            <FileBox className={`h-3.5 w-3.5 flex-shrink-0 ${activeTab === 'dwg' ? 'text-emerald-400' : 'text-slate-600'}`} />
-            <span className="text-xs font-semibold">{t('sidebar.dwg')}</span>
-            <span className="ml-auto text-[9px] font-bold text-emerald-500">DWG</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onTabChange('rvt')}
-            className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-semibold ${
-              activeTab === 'rvt' ? 'bg-blue-600/20 text-blue-300' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-            }`}
-          >
-            <FileBox className="h-3.5 w-3.5" />
-            {t('sidebar.rvtAudit')}
-          </button>
-          <button type="button" onClick={() => onTabChange('guide')}
-            className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition ${activeTab === 'guide' ? 'bg-emerald-600/20 text-emerald-200' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
-            <BookOpen className={`h-3.5 w-3.5 flex-shrink-0 ${activeTab === 'guide' ? 'text-emerald-400' : 'text-slate-600'}`} />
-            <span className="text-xs font-semibold">{t('sidebar.guide')}</span>
           </button>
         </div>
       </section>

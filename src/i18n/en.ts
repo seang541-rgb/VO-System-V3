@@ -4,6 +4,12 @@ export const en: Record<string, string> = {
   'header.credits': 'Credits',
   'header.signOut': 'Sign Out',
   'header.banner': 'Originally VO System, now upgraded to Idea Nest. All VO comparison, claims analysis, and Excel export features are available directly in the Copilot.',
+  'header.tab.copilot': 'Copilot',
+  'header.tab.overview': '3D & VO',
+  'header.tab.audit': 'Audit',
+  'header.tab.valuation': 'BQ',
+  'header.tab.dwg': 'DWG',
+  'header.tab.rvt': 'RVT',
 
   // ── Sidebar: Workspace ──
   'sidebar.workspace': 'Workspace',

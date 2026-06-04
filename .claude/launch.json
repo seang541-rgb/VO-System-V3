@@ -3,9 +3,10 @@
   "configurations": [
     {
       "name": "dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 3000
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--port", "5190", "--strictPort"],
+      "port": 5190,
+      "autoPort": false
     }
   ]
 }
