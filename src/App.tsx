@@ -343,8 +343,8 @@ export default function App() {
             canRunAudit={!!rvtFile && rvtConvertStatus === 'idle' && !!user}
           />
         ) : (
-          <div className="flex flex-col border-t border-slate-700 bg-slate-900 px-4 py-4 lg:px-6">
-            <div className="min-h-[36rem]">
+          <div className="flex h-[calc(100vh-48px)] flex-col border-t border-slate-700 bg-slate-900 px-4 py-4 lg:px-6">
+            <div className="flex-1">
               <CopilotPanel
                 toolContext={agentToolContext}
                 signedIn={!!user}
