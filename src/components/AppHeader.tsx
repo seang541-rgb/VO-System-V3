@@ -32,15 +32,12 @@ export default function AppHeader({
     <header className="sticky top-0 z-40 h-12 border-b border-slate-700 bg-slate-900/95 backdrop-blur">
       <div className="flex h-full items-center justify-between px-4">
         {/* Left: Logo + Name */}
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 items-center justify-center rounded-lg bg-white/95 px-1 py-0.5 shadow-sm ring-1 ring-white/20">
-            <img
-              src="/ideanest-logo.png"
-              alt="IdeaNest"
-              className="h-full w-auto object-contain"
-            />
-          </div>
-          <span className="text-xs font-bold tracking-wide text-slate-200">IdeaNest</span>
+        <div className="flex items-center gap-1.5">
+          <img
+            src="/ideanest-logo.png"
+            alt="IdeaNest"
+            className="h-9 w-auto object-contain"
+          />
         </div>
 
         {/* Center: Navigation tabs */}
