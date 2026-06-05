@@ -32,12 +32,17 @@ export default function AppHeader({
     <header className="sticky top-0 z-40 h-12 border-b border-slate-700 bg-slate-900/95 backdrop-blur">
       <div className="flex h-full items-center justify-between px-4">
         {/* Left: Logo + Name */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2.5">
           <img
             src="/ideanest-logo.png"
             alt="IdeaNest"
             className="h-9 w-auto object-contain"
           />
+          <div className="hidden items-baseline gap-1.5 sm:flex">
+            <span className="text-sm font-bold tracking-wide text-slate-100">IdeaNest</span>
+            <span className="text-[10px] text-slate-500">·</span>
+            <span className="text-[10px] font-medium tracking-wide text-slate-400">BIM Audit Copilot</span>
+          </div>
         </div>
 
         {/* Center: Navigation tabs */}
