@@ -31,22 +31,24 @@ export default function AppHeader({
   return (
     <header className="sticky top-0 z-40 h-12 border-b border-slate-700 bg-slate-900/95 backdrop-blur">
       <div className="flex h-full items-center justify-between px-4">
-        {/* Left: Logo + Name */}
-        <div className="flex items-center gap-2.5">
+        {/* Left: Logo */}
+        <div className="flex items-center">
           <img
             src="/ideanest-logo.png"
             alt="IdeaNest"
             className="h-9 w-auto object-contain"
           />
-          <div className="hidden items-baseline gap-1.5 sm:flex">
+        </div>
+
+        {/* Center: Branding + Navigation tabs */}
+        <div className="flex items-center gap-4">
+          <div className="hidden items-baseline gap-1.5 md:flex">
             <span className="text-sm font-bold tracking-wide text-slate-100">IdeaNest</span>
             <span className="text-[10px] text-slate-500">·</span>
             <span className="text-[10px] font-medium tracking-wide text-slate-400">BIM Audit Copilot</span>
           </div>
-        </div>
-
-        {/* Center: Navigation tabs */}
-        <nav className="flex items-center gap-1">
+          <div className="hidden h-4 w-px bg-slate-700 md:block" />
+          <nav className="flex items-center gap-1">
           {NAV_TABS.map(({ key, i18nKey }) => (
             <button
               key={key}
@@ -61,7 +63,8 @@ export default function AppHeader({
               {t(i18nKey)}
             </button>
           ))}
-        </nav>
+          </nav>
+        </div>
 
         {/* Right: Guide + Credits + Language + Sign Out */}
         <div className="flex items-center gap-2">
