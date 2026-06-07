@@ -21,6 +21,8 @@ export const en: Record<string, string> = {
   'sidebar.components': 'components',
   'sidebar.lineItemsReady': 'line items ready',
   'sidebar.defaultBqLibrary': 'Built-in Test BQ Library',
+  'sidebar.reset': 'Reset',
+  'sidebar.resetWorkspace': 'Clear all uploaded files and start fresh',
 
   // ── Sidebar: Quick Actions ──
   'sidebar.quickActions': 'Quick Actions',
@@ -274,6 +276,7 @@ export const en: Record<string, string> = {
   // ── Toast Messages ──
   'toast.loadSuccess': '{label} loaded · {count} components',
   'toast.loadFailed': '{label} load failed',
+  'toast.workspaceReset': 'Workspace cleared',
   'toast.auditComplete': 'Audit complete · {count} components · {duration}s',
   'toast.auditFailed': 'Audit failed: {message}',
   'toast.voComplete': 'VO comparison complete',

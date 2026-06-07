@@ -21,6 +21,8 @@ export const zh: Record<string, string> = {
   'sidebar.components': '构件',
   'sidebar.lineItemsReady': '个项目已就绪',
   'sidebar.defaultBqLibrary': '内置测试 BQ 库',
+  'sidebar.reset': '重置',
+  'sidebar.resetWorkspace': '清除所有已上传文件，重新开始',
 
   // ── Sidebar: Quick Actions ──
   'sidebar.quickActions': '快捷操作',
@@ -274,6 +276,7 @@ export const zh: Record<string, string> = {
   // ── Toast Messages ──
   'toast.loadSuccess': '{label} 加载完成 · {count} 构件',
   'toast.loadFailed': '{label} 加载失败',
+  'toast.workspaceReset': '工作区已清除',
   'toast.auditComplete': '算量完成 · {count} 构件 · {duration}s',
   'toast.auditFailed': '算量失败: {message}',
   'toast.voComplete': 'VO 对比完成',

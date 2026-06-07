@@ -148,6 +148,21 @@ export class BimEngine {
     this.animate();
   }
 
+  /** Remove the loaded IFC model from the scene and clear extracted components. */
+  clearScene() {
+    if (this.ifcModel) {
+      this.scene.remove(this.ifcModel);
+      this.ifcModel = null;
+    }
+    this.components = [];
+    // Remove any diff highlight meshes that may linger
+    const toRemove: THREE.Object3D[] = [];
+    this.scene.traverse((child) => {
+      if (child.userData?.diffHighlight) toRemove.push(child);
+    });
+    toRemove.forEach((obj) => this.scene.remove(obj));
+  }
+
   dispose() {
     window.removeEventListener('resize', this.onWindowResize);
     if (this.animFrameId !== null) cancelAnimationFrame(this.animFrameId);

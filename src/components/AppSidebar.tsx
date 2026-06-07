@@ -9,6 +9,7 @@ import {
   Loader2,
   AlertCircle,
   Zap,
+  RotateCcw,
 } from 'lucide-react';
 import type { BimComponent, BqLineItem, VoComparisonResults } from '../BimEngine';
 import type { ModelLoadState } from '../lib/format';
@@ -36,6 +37,7 @@ interface AppSidebarProps {
   onRunAudit: () => void;
   auditState: AuditState;
   onUploadRvt: () => void;
+  onResetWorkspace: () => void;
 }
 
 export default function AppSidebar({
@@ -45,17 +47,28 @@ export default function AppSidebar({
   isRunning, isExporting,
   onUploadBase, onUploadRevision, onUploadBq,
   onRunCompare, onExportExcel, onExportBqTemplate,
-  onRunAudit, auditState, onUploadRvt,
+  onRunAudit, auditState, onUploadRvt, onResetWorkspace,
 }: AppSidebarProps) {
   const { t } = useLang();
   const canCompare = v1State === 'ready' && v2State === 'ready' && !isRunning;
   const canAudit = (v1State === 'ready' || v2State === 'ready') && auditState !== 'running';
+  const hasAnyFile = v1File !== null || v2File !== null;
 
   return (
     <aside className="sticky top-[48px] flex h-[calc(100vh-48px)] w-72 flex-col gap-4 overflow-y-auto border-r border-slate-700 bg-slate-900 px-4 py-4">
       {/* Workspace files */}
       <section>
-        <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{t('sidebar.workspace')}</div>
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">{t('sidebar.workspace')}</span>
+          {hasAnyFile && (
+            <button type="button" onClick={onResetWorkspace} disabled={isRunning}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-slate-500 transition hover:bg-slate-800 hover:text-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
+              title={t('sidebar.resetWorkspace')}>
+              <RotateCcw className="h-3 w-3" />
+              <span>{t('sidebar.reset')}</span>
+            </button>
+          )}
+        </div>
         <div className="space-y-2">
           <button type="button" onClick={onUploadBase} disabled={isRunning || v1State === 'loading'}
             className={`group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition hover:border-slate-600 ${v1State === 'loading' ? 'border-blue-500/40 bg-blue-600/10' : v1Components.length > 0 ? 'border-blue-600/30 bg-blue-600/5' : v1State === 'error' ? 'border-red-500/30 bg-red-500/5' : 'border-slate-700 bg-slate-800/50'} disabled:cursor-not-allowed`}>

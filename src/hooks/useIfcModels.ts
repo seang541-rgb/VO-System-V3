@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import type { BimComponent, BimEngine } from '../BimEngine';
 import type { ModelLoadState, ActiveTab } from '../lib/format';
 import { formatElementLabel } from '../lib/format';
@@ -85,6 +85,25 @@ export function useIfcModels(callbacks: {
     e.target.value = '';
   };
 
+  /** Clear all loaded IFC files, components, and related state. */
+  const resetWorkspace = useCallback(() => {
+    setV1File(null);
+    setV2File(null);
+    setV1Components([]);
+    setV2Components([]);
+    setV1State('idle');
+    setV2State('idle');
+    setV1Error('');
+    setV2Error('');
+    setActiveIfcSlot(null);
+    callbacks.resetComparison();
+    // Also clear the 3D scene
+    const engine = callbacks.ensureEngine();
+    engine?.clearScene();
+    callbacks.setSysLog('Workspace reset.');
+    toast.success(t('toast.workspaceReset'));
+  }, [t, callbacks]);
+
   return {
     v1File, v2File,
     v1Components, v2Components,
@@ -93,5 +112,6 @@ export function useIfcModels(callbacks: {
     activeIfcSlot,
     v1InputRef, v2InputRef,
     handleIFCUpload,
+    resetWorkspace,
   };
 }

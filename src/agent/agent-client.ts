@@ -112,8 +112,14 @@ async function callAgentProxy(
     const err = Object.assign(new Error(message), { status: res.status });
     throw err;
   }
+
+  // Support both wrapped `{ response: {...}, credits_balance }` and
+  // flat `{ choices: [...], credits_balance }` formats (deployed edge
+  // function may use either layout).
+  const response = json.response ?? json;
+
   return {
-    response: json.response,
+    response,
     credits_balance: typeof json.credits_balance === 'number' ? json.credits_balance : null,
   };
 }
@@ -122,7 +128,15 @@ async function callAgentProxy(
 
 function extractAssistantMessage(response: unknown): OpenAIMessage | null {
   if (!response || typeof response !== 'object') return null;
-  const choices = (response as Record<string, unknown>).choices;
+  const record = response as Record<string, unknown>;
+
+  // Detect NVIDIA NIM async/queued response (no choices, has infer_id)
+  if ('infer_id' in record && !('choices' in record)) {
+    console.warn('[Copilot] NVIDIA NIM returned async response:', record);
+    return null;
+  }
+
+  const choices = record.choices;
   if (!Array.isArray(choices) || choices.length === 0) return null;
   const message = (choices[0] as Record<string, unknown>).message as OpenAIMessage | undefined;
   return message ?? null;
@@ -174,7 +188,12 @@ export class AgentSession {
 
       const assistantMsg = extractAssistantMessage(proxyResult.response);
       if (!assistantMsg) {
-        onEvent({ kind: 'error', message: 'Empty model response.' });
+        const record = proxyResult.response as Record<string, unknown> | null;
+        const isAsync = record && 'infer_id' in record && !('choices' in record);
+        const errorMsg = isAsync
+          ? 'AI model is temporarily queued. Please try again in a moment.'
+          : 'Empty model response.';
+        onEvent({ kind: 'error', message: errorMsg });
         return '';
       }
 

@@ -60,7 +60,7 @@ export default function App() {
     setActiveTab,
     resetComparison: () => resetComparisonRef.current(),
   });
-  const { v1File, v2File, v1Components, v2Components, v1State, v2State, v1Error, v2Error, activeIfcSlot, v1InputRef, v2InputRef, handleIFCUpload } = ifcModels;
+  const { v1File, v2File, v1Components, v2Components, v1State, v2State, v1Error, v2Error, activeIfcSlot, v1InputRef, v2InputRef, handleIFCUpload, resetWorkspace } = ifcModels;
 
   // ── Hook: BQ Mapping ─────────────────────────────────────────────────
   const bqMapping = useBqMapping({ setSysLog, v1Components, v2Components });
@@ -228,6 +228,7 @@ export default function App() {
           onRunAudit={runAudit}
           auditState={auditState}
           onUploadRvt={() => rvtInputRef.current?.click()}
+          onResetWorkspace={resetWorkspace}
         />
 
         <main className="min-w-0 flex-1 overflow-x-hidden">

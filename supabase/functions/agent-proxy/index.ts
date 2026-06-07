@@ -117,7 +117,7 @@ serve(async (request) => {
       body: JSON.stringify(nimBody),
     });
 
-    const nimJson = await nimRes.json().catch(() => null);
+    let nimJson = await nimRes.json().catch(() => null);
     if (!nimRes.ok) {
       const msg =
         nimJson?.error?.message ||
@@ -125,6 +125,47 @@ serve(async (request) => {
         nimJson?.message ||
         `NVIDIA NIM request failed (${nimRes.status}).`;
       return jsonResponse(nimRes.status, { error: msg });
+    }
+
+    // Handle NVIDIA NIM async/queued responses: when the model is cold or
+    // busy, NIM returns { infer_id, turn_id } instead of a chat completion.
+    // Poll the request status endpoint until the result is ready.
+    if (nimJson?.infer_id && !nimJson?.choices) {
+      const requestId = nimJson.infer_id;
+      const statusUrl = `${NVIDIA_ENDPOINT}/${requestId}`;
+      const POLL_INTERVAL = 1500; // ms
+      const MAX_POLLS = 40;       // 60s total
+
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+        const pollRes = await fetch(statusUrl, {
+          headers: {
+            'Authorization': `Bearer ${nvidiaKey}`,
+            'Accept': 'application/json',
+          },
+        });
+        const pollJson = await pollRes.json().catch(() => null);
+
+        // Completed — pollJson should contain the standard { choices: [...] }
+        if (pollJson?.choices) {
+          nimJson = pollJson;
+          break;
+        }
+        // Still pending — keep polling
+        if (pollJson?.status === 'pending' || pollJson?.status === 'running' || pollJson?.infer_id) {
+          continue;
+        }
+        // Unexpected status — bail
+        if (!pollRes.ok || pollJson?.status === 'failed') {
+          const msg = pollJson?.error?.message || pollJson?.detail || `Async inference failed (poll ${i}).`;
+          return jsonResponse(502, { error: msg });
+        }
+      }
+
+      // If we exhausted polls without getting choices, report timeout
+      if (!nimJson?.choices) {
+        return jsonResponse(504, { error: 'Model inference timed out after 60s. Please try again.' });
+      }
     }
 
     return jsonResponse(200, { response: nimJson, credits_balance: newBalance });
