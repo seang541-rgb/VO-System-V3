@@ -247,7 +247,8 @@ export function findPreferredMeasure(
   }
 
   if (candidates.length > 0) {
-    return { value: candidates[0].value, source: candidates[0].source };
+    const best = candidates[0]!;
+    return { value: best.value, source: best.source };
   }
   return { value: null, source: '' };
 }
@@ -258,8 +259,9 @@ function pathsForElement(
   preferredBaseType: string | undefined,
   api: any,
 ): PsetPath[] {
-  if (preferredBaseType && PREFERRED_MEASURE_PATHS[preferredBaseType]) {
-    return PREFERRED_MEASURE_PATHS[preferredBaseType][measureKind] ?? [];
+  if (preferredBaseType) {
+    const preferred = PREFERRED_MEASURE_PATHS[preferredBaseType];
+    if (preferred) return preferred[measureKind] ?? [];
   }
   // Match by element's IFC class. web-ifc has no direct `is_a()` with subtype walking,
   // but for the supported types (Wall/Slab/Beam/Column/Covering) the typeCode→name
@@ -268,7 +270,8 @@ function pathsForElement(
   const ifcClass = getIfcTypeName(api, elementLine?.type);
   for (const baseType of Object.keys(PREFERRED_MEASURE_PATHS)) {
     if (ifcClass === baseType || ifcClass.startsWith(`${baseType}Standard`)) {
-      return PREFERRED_MEASURE_PATHS[baseType][measureKind] ?? [];
+      const paths = PREFERRED_MEASURE_PATHS[baseType];
+      return paths?.[measureKind] ?? [];
     }
   }
   return [];

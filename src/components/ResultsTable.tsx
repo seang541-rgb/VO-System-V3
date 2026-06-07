@@ -45,9 +45,9 @@ interface ResultsTableProps {
   resultRows: ResultRow[];
   selectedRowKey: string | null;
   onRowClick: (action: VoCommercialAction) => void;
-  scrollRef: React.RefObject<HTMLDivElement>;
-  scrollbarRef: React.RefObject<HTMLDivElement>;
-  scrollbarInnerRef: React.RefObject<HTMLDivElement>;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  scrollbarRef: React.RefObject<HTMLDivElement | null>;
+  scrollbarInnerRef: React.RefObject<HTMLDivElement | null>;
 }
 
 export default function ResultsTable({

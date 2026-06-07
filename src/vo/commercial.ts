@@ -414,7 +414,8 @@ function applyShieldedNonDeduction(action: VoCommercialAction) {
   const shieldedChanges = getShieldedIgnoredQuantityChanges(action.changes);
   if (shieldedChanges.length === 0) return action;
 
-  const unit = shieldedChanges[0].protectedUnit || shieldedChanges[0].unit || action.unit;
+  const first = shieldedChanges[0]!;
+  const unit = first.protectedUnit || first.unit || action.unit;
   const rawDeduction = shieldedChanges.reduce((sum, change) => sum + Math.abs(change.delta ?? 0), 0);
   const ruleIds = [...new Set(shieldedChanges.map((change) => change.qsRuleId).filter(Boolean))];
   const note = appendMeasurementNote(

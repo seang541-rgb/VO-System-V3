@@ -10,6 +10,10 @@
       "DOM.Iterable"
     ],
     "skipLibCheck": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
     "moduleResolution": "bundler",
     "isolatedModules": true,
     "moduleDetection": "force",

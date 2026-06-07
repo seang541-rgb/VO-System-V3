@@ -142,9 +142,9 @@ export function parseStepEntities(stepText: string) {
   let match: RegExpExecArray | null;
 
   while ((match = entityPattern.exec(stepText)) !== null) {
-    const expressID = Number(match[1]);
-    const type = match[2].toUpperCase();
-    const args = splitStepArguments(match[3]);
+    const expressID = Number(match[1]!);
+    const type = match[2]!.toUpperCase();
+    const args = splitStepArguments(match[3] ?? '');
     entities.set(expressID, { expressID, type, args });
   }
 
@@ -249,7 +249,7 @@ function renderStepNominalValue(token?: string): string {
   if (!trimmed || trimmed === '$' || trimmed === '*') return '';
   const wrapped = /^([A-Z0-9_]+)\((.*)\)$/i.exec(trimmed);
   if (wrapped) {
-    const inner = wrapped[2];
+    const inner = wrapped[2] ?? '';
     const stringValue = parseStepString(inner);
     if (stringValue) return stringValue;
     const numeric = Number(inner);

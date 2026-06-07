@@ -178,8 +178,8 @@ export function formatOpeningLink(component?: Partial<BimComponent> | null) {
     const hostBits = [component.openingHostType, component.openingHostName || component.openingHostIfcId].filter(Boolean).join(' ');
     return hostBits ? `Opening -> ${hostBits}` : 'Opening -> Unassigned host';
   }
-  if (component.openingCount > 0 || component.openingSignature) {
-    return component.openingSignature ? `Host -> ${component.openingSignature}` : `Host -> ${component.openingCount} opening(s)`;
+  if ((component.openingCount ?? 0) > 0 || component.openingSignature) {
+    return component.openingSignature ? `Host -> ${component.openingSignature}` : `Host -> ${component.openingCount ?? 0} opening(s)`;
   }
   return '-';
 }
@@ -187,7 +187,7 @@ export function formatOpeningLink(component?: Partial<BimComponent> | null) {
 export function formatStaticShield(component?: Partial<BimComponent> | null) {
   if (!component) return '-';
   if (component.isOpening) return 'Opening change';
-  if (component.openingCount > 0) return 'Host openings tracked';
+  if ((component.openingCount ?? 0) > 0) return 'Host openings tracked';
   return '-';
 }
 

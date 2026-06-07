@@ -28,14 +28,14 @@ export function formatNumericValue(value: number, unit: string) {
 function serializeAttributes(attributes: Record<string, BimAttributeValue>) {
   return Object.keys(attributes)
     .sort()
-    .map((key) => [key, attributes[key].value, attributes[key].source])
+    .map((key) => { const attr = attributes[key]!; return [key, attr.value, attr.source]; })
     .flat();
 }
 
 function serializeQuantities(quantities: Record<string, BimQuantityValue>) {
   return Object.keys(quantities)
     .sort()
-    .map((key) => [key, quantities[key].value, quantities[key].unit, quantities[key].source])
+    .map((key) => { const qty = quantities[key]!; return [key, qty.value, qty.unit, qty.source]; })
     .flat();
 }
 

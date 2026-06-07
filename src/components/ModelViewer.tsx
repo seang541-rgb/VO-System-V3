@@ -6,7 +6,7 @@ import { modelStateLabel } from '../lib/format';
 import { useLang } from '../i18n/LanguageContext';
 
 interface ModelViewerProps {
-  containerRef: React.RefObject<HTMLDivElement>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
   sysLog: string;
   v1File: File | null;
   v2File: File | null;

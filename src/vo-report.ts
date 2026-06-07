@@ -384,7 +384,7 @@ function buildStarRateBuildUpSheet(rows: VoCommercialAction[]) {
   ];
 
   for (let rowIndex = 0; rowIndex < aoa.length; rowIndex += 1) {
-    if (typeof aoa[rowIndex]?.[0] === 'string' && /^SR-\d{3}/.test(aoa[rowIndex][0])) {
+    if (typeof aoa[rowIndex]?.[0] === 'string' && /^SR-\d{3}/.test(aoa[rowIndex]![0] as string)) {
       sheet['!merges'].push({ s: { r: rowIndex, c: 0 }, e: { r: rowIndex, c: 8 } });
     }
   }

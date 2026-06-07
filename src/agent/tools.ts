@@ -87,7 +87,7 @@ function formatMeasurementForLLM(r: MeasurementCodeRow) {
 function extractAppliesTo(title: string): string {
   // Take the segment after an em-dash, en-dash, hyphen, or colon
   const m = title.match(/[—–\-:]\s*(.+)$/);
-  if (m) return m[1].trim();
+  if (m?.[1]) return m[1].trim();
   return title;
 }
 
@@ -564,7 +564,7 @@ export async function executeAgentTool(
       const claimType = typeof input.claimType === 'string' ? input.claimType : 'unspecified';
       const breakdown = buildCommercialBreakdown(ctx.voResults, ctx.bqContext);
       const summary = breakdown.summary ?? {};
-      const qs = (ctx.voResults.qsSummary ?? {}) as Record<string, number>;
+      const qs = ctx.voResults.qsSummary ?? {} as Record<string, unknown>;
 
       // Top 5 actions by absolute amount — gives the LLM concrete commercial anchors
       const topActions = [...(breakdown.actions ?? [])]
@@ -583,13 +583,13 @@ export async function executeAgentTool(
           added: ctx.voResults.added.length,
           deleted: ctx.voResults.deleted.length,
           modified: ctx.voResults.modified.length,
-          formworkAlerts: qs.formworkAlerts ?? 0,
-          eotFlags: qs.eotFlags ?? 0,
-          starRateCandidates: qs.starRateCandidates ?? 0,
-          protectedValue: qs.protectedValue ?? 0,
-          omissionsValue: (summary as Record<string, number>).omissionsValue ?? 0,
-          additionsValue: (summary as Record<string, number>).additionsValue ?? 0,
-          netValue: (summary as Record<string, number>).netValue ?? 0,
+          formworkAlerts: 'formworkAlerts' in qs ? (qs as unknown as Record<string, number>).formworkAlerts ?? 0 : 0,
+          eotFlags: 'eotFlags' in qs ? (qs as unknown as Record<string, number>).eotFlags ?? 0 : 0,
+          starRateCandidates: 'starRateCandidates' in qs ? (qs as unknown as Record<string, number>).starRateCandidates ?? 0 : 0,
+          protectedValue: 'protectedValue' in qs ? (qs as unknown as Record<string, number>).protectedValue ?? 0 : 0,
+          omissionsValue: (summary as unknown as Record<string, number>).omissionsValue ?? 0,
+          additionsValue: (summary as unknown as Record<string, number>).additionsValue ?? 0,
+          netValue: (summary as unknown as Record<string, number>).netValue ?? 0,
         },
         topCommercialActions: topActions,
       };

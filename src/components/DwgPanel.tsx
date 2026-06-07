@@ -64,7 +64,7 @@ export default function DwgPanel({ result, loading, error, onUpload }: DwgPanelP
   const catLabel = (it: QuantityItem) => `${t('dwg.cat.' + it.kind)}${it.size ? ' ' + it.size : ''}`;
   const isRejected = (i: number) => reviewStatus[i] === 'rejected';
   const total = result
-    ? result.items.reduce((s, _it, i) => s + (!isRejected(i) && rates[i] != null ? result.items[i].quantity * rates[i] : 0), 0)
+    ? result.items.reduce((s, _it, i) => s + (!isRejected(i) && rates[i] != null ? result.items[i]!.quantity * (rates[i] ?? 0) : 0), 0)
     : 0;
 
   const handleExport = () => {

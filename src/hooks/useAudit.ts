@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { BimEngine } from '../BimEngine';
 import type { AuditState } from '../components/AuditPanel';
 import type { AuditResult } from '../audit/types';
@@ -12,13 +12,17 @@ export function useAudit(callbacks: {
   setActiveTab: (tab: ActiveTab) => void;
 }) {
   const { t } = useLang();
+  const callbacksRef = useRef(callbacks);
+  callbacksRef.current = callbacks;
+
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
   const [auditState, setAuditState] = useState<AuditState>('idle');
   const [auditError, setAuditError] = useState('');
   const [auditDurationMs, setAuditDurationMs] = useState(0);
 
   const runAudit = useCallback(async () => {
-    const engine = callbacks.ensureEngine();
+    const cb = callbacksRef.current;
+    const engine = cb.ensureEngine();
     if (!engine) return;
     const handle = engine.getIfcHandle();
     if (!handle) {
@@ -29,7 +33,7 @@ export function useAudit(callbacks: {
     setAuditState('running');
     setAuditError('');
     setAuditResult(null);
-    callbacks.setActiveTab('audit');
+    cb.setActiveTab('audit');
     const t0 = performance.now();
     try {
       const { runAudit: doAudit } = await import('../audit/extractor');
@@ -38,18 +42,17 @@ export function useAudit(callbacks: {
       setAuditDurationMs(duration);
       setAuditResult(result);
       setAuditState('done');
-      callbacks.setSysLog(`Audit complete: ${result.records.length} elements in ${(duration / 1000).toFixed(1)}s`);
+      cb.setSysLog(`Audit complete: ${result.records.length} elements in ${(duration / 1000).toFixed(1)}s`);
       toast.success(t('toast.auditComplete', { count: String(result.records.length), duration: (duration / 1000).toFixed(1) }));
     } catch (err) {
       setAuditDurationMs(performance.now() - t0);
       const message = err instanceof Error ? err.message : String(err);
       setAuditError(message);
       setAuditState('error');
-      callbacks.setSysLog(`Audit failed: ${message}`);
+      cb.setSysLog(`Audit failed: ${message}`);
       toast.error(t('toast.auditFailed', { message }));
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [t]);
 
   return {
     auditResult, auditState, auditError, auditDurationMs,

@@ -389,7 +389,7 @@ export function computePlasterArea(
  */
 export function normalizeRevitName(name: string): string {
   const parts = name.split(':').map((p) => p.trim()).filter(Boolean);
-  while (parts.length > 0 && /^\d+$/.test(parts[parts.length - 1])) {
+  while (parts.length > 0 && /^\d+$/.test(parts[parts.length - 1]!)) {
     parts.pop();
   }
   return parts.length > 0 ? parts.join(': ') : name;

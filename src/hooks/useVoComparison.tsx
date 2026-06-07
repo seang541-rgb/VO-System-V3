@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   BimComponent,
   BimEngine,
@@ -35,6 +35,7 @@ import {
 } from '../lib/format';
 import toast from 'react-hot-toast';
 import { useLang } from '../i18n/LanguageContext';
+import BulkMappingToast from '../components/BulkMappingToast';
 
 export function useVoComparison(deps: {
   ensureEngine: () => BimEngine | null;
@@ -142,8 +143,11 @@ export function useVoComparison(deps: {
     }
   };
 
+  const ensureEngineRef = useRef(deps.ensureEngine);
+  ensureEngineRef.current = deps.ensureEngine;
+
   const runCompareForAgent = useCallback(async (): Promise<VoComparisonResults | null> => {
-    const engine = deps.ensureEngine();
+    const engine = ensureEngineRef.current();
     if (!engine || deps.v1State !== 'ready' || deps.v2State !== 'ready') return null;
     const results = await engine.compareModels(deps.v1Components, deps.v2Components);
     setVoResults(results);
@@ -154,7 +158,6 @@ export function useVoComparison(deps: {
       /* highlight failures do not block tool result */
     }
     return results;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deps.v1State, deps.v2State, deps.v1Components, deps.v2Components]);
 
   // ── Derived commercial data ──────────────────────────────────────────────
@@ -370,20 +373,17 @@ export function useVoComparison(deps: {
     if (!options?.skipBulkPrompt && item && bulkEligibleLabels.length > 1) {
       toast(
         (toastRef) => (
-          <div className="text-sm">
-            <p className="font-semibold text-slate-100">{t('bulk.title')}</p>
-            <p className="mt-1 text-slate-300">
-              {t('bulk.message', { instanceCount: String(bulkEligibleInstanceCount), labelCount: String(bulkEligibleLabels.length), reference: item.itemReference })}
-            </p>
-            <div className="mt-3 flex gap-2">
-              <button type="button" className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-500" onClick={() => {
-                applyLabels(bulkEligibleLabels);
-                deps.setSysLog(`Bulk lock applied: ${item.itemReference} mounted to ${bulkEligibleLabels.length} QS descriptions covering ${bulkEligibleInstanceCount} model instances.`);
-                toast.dismiss(toastRef.id);
-              }}>{t('bulk.applyAll')}</button>
-              <button type="button" className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700" onClick={() => toast.dismiss(toastRef.id)}>{t('bulk.skip')}</button>
-            </div>
-          </div>
+          <BulkMappingToast
+            instanceCount={bulkEligibleInstanceCount}
+            labelCount={bulkEligibleLabels.length}
+            itemReference={item.itemReference}
+            onApply={() => {
+              applyLabels(bulkEligibleLabels);
+              deps.setSysLog(`Bulk lock applied: ${item.itemReference} mounted to ${bulkEligibleLabels.length} QS descriptions covering ${bulkEligibleInstanceCount} model instances.`);
+              toast.dismiss(toastRef.id);
+            }}
+            onSkip={() => toast.dismiss(toastRef.id)}
+          />
         ),
         { duration: 15000, style: { background: '#1e293b', border: '1px solid #334155', maxWidth: '400px' } },
       );

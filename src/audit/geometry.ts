@@ -19,10 +19,11 @@ interface Point3 {
 // so the audit module stays self-contained). ───────────────────────────────
 
 function applyFlatMatrix(x: number, y: number, z: number, m: ArrayLike<number>): Point3 {
+  // 4x4 column-major matrix — indices 0..15 are always present
   return {
-    x: m[0] * x + m[4] * y + m[8] * z + m[12],
-    y: m[1] * x + m[5] * y + m[9] * z + m[13],
-    z: m[2] * x + m[6] * y + m[10] * z + m[14],
+    x: m[0]! * x + m[4]! * y + m[8]! * z + m[12]!,
+    y: m[1]! * x + m[5]! * y + m[9]! * z + m[13]!,
+    z: m[2]! * x + m[6]! * y + m[10]! * z + m[14]!,
   };
 }
 
@@ -102,11 +103,11 @@ function consumeMesh(api: any, modelID: number, mesh: any, acc: RawMeshAccumulat
 
     const transform = placedGeometry.flatTransformation;
     const readVertex = (vRef: number): Point3 =>
-      applyFlatMatrix(vertices[vRef * 6], vertices[vRef * 6 + 1], vertices[vRef * 6 + 2], transform);
+      applyFlatMatrix(vertices[vRef * 6]!, vertices[vRef * 6 + 1]!, vertices[vRef * 6 + 2]!, transform);
 
     // BBox: walk every vertex.
     for (let vi = 0; vi < vertices.length; vi += 6) {
-      const p = applyFlatMatrix(vertices[vi], vertices[vi + 1], vertices[vi + 2], transform);
+      const p = applyFlatMatrix(vertices[vi]!, vertices[vi + 1]!, vertices[vi + 2]!, transform);
       if (p.x < acc.mins[0]) acc.mins[0] = p.x;
       if (p.y < acc.mins[1]) acc.mins[1] = p.y;
       if (p.z < acc.mins[2]) acc.mins[2] = p.z;
@@ -118,9 +119,9 @@ function consumeMesh(api: any, modelID: number, mesh: any, acc: RawMeshAccumulat
     // Surface area + signed volume + wall side area: walk triangles.
     if (indices && indices.length >= 3) {
       for (let i = 0; i + 2 < indices.length; i += 3) {
-        const a = readVertex(indices[i]);
-        const b = readVertex(indices[i + 1]);
-        const c = readVertex(indices[i + 2]);
+        const a = readVertex(indices[i]!);
+        const b = readVertex(indices[i + 1]!);
+        const c = readVertex(indices[i + 2]!);
         const area = triangleArea(a, b, c);
         acc.surfaceArea += area;
         acc.signedVolume += signedTriangleVolume(a, b, c);
@@ -130,9 +131,9 @@ function consumeMesh(api: any, modelID: number, mesh: any, acc: RawMeshAccumulat
     } else {
       // No index buffer — assume vertices are laid out triangle-by-triangle.
       for (let vi = 0; vi + 17 < vertices.length; vi += 18) {
-        const a = applyFlatMatrix(vertices[vi], vertices[vi + 1], vertices[vi + 2], transform);
-        const b = applyFlatMatrix(vertices[vi + 6], vertices[vi + 7], vertices[vi + 8], transform);
-        const c = applyFlatMatrix(vertices[vi + 12], vertices[vi + 13], vertices[vi + 14], transform);
+        const a = applyFlatMatrix(vertices[vi]!, vertices[vi + 1]!, vertices[vi + 2]!, transform);
+        const b = applyFlatMatrix(vertices[vi + 6]!, vertices[vi + 7]!, vertices[vi + 8]!, transform);
+        const c = applyFlatMatrix(vertices[vi + 12]!, vertices[vi + 13]!, vertices[vi + 14]!, transform);
         const area = triangleArea(a, b, c);
         acc.surfaceArea += area;
         acc.signedVolume += signedTriangleVolume(a, b, c);

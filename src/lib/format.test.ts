@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import type { BimComponent, BqLineItem, VoCommercialAction } from '../BimEngine';
 import {
   buildBqMappingContext,
   guessUnitBySection,
@@ -36,19 +37,19 @@ describe('buildSystemUnitMismatchMessage', () => {
 });
 
 describe('formatElementLabel', () => {
-  it('returns qsLabel when present', () => expect(formatElementLabel({ qsLabel: 'My Wall' } as any)).toBe('My Wall'));
-  it('falls back to name', () => expect(formatElementLabel({ name: 'Wall 200mm' } as any)).toBe('Wall 200mm'));
-  it('falls back to type', () => expect(formatElementLabel({ type: 'IfcWall' } as any)).toBe('IfcWall'));
+  it('returns qsLabel when present', () => expect(formatElementLabel({ qsLabel: 'My Wall' })).toBe('My Wall'));
+  it('falls back to name', () => expect(formatElementLabel({ name: 'Wall 200mm' })).toBe('Wall 200mm'));
+  it('falls back to type', () => expect(formatElementLabel({ type: 'IfcWall' })).toBe('IfcWall'));
   it('returns Unknown element for null', () => expect(formatElementLabel(null)).toBe('Unknown element'));
   it('returns Unknown element for undefined', () => expect(formatElementLabel(undefined)).toBe('Unknown element'));
 });
 
 describe('getActionChanges', () => {
   it('returns changes array', () => {
-    expect(getActionChanges({ changes: [1, 2, 3] } as any)).toEqual([1, 2, 3]);
+    expect(getActionChanges({ changes: [1, 2, 3] } as unknown as Partial<VoCommercialAction>)).toEqual([1, 2, 3]);
   });
   it('returns empty array for null', () => expect(getActionChanges(null)).toEqual([]));
-  it('returns empty array when no changes', () => expect(getActionChanges({} as any)).toEqual([]));
+  it('returns empty array when no changes', () => expect(getActionChanges({} as Partial<VoCommercialAction>)).toEqual([]));
 });
 
 describe('formatCurrencyValue', () => {
@@ -64,25 +65,25 @@ describe('formatSignedCurrencyValue', () => {
 
 describe('formatQuantityValue', () => {
   it('formats finite quantity to 4 decimals', () => {
-    expect(formatQuantityValue({ quantity: 12.5 } as any)).toBe('12.5000');
+    expect(formatQuantityValue({ quantity: 12.5 } as VoCommercialAction)).toBe('12.5000');
   });
   it('returns 0.0000 for non-finite', () => {
-    expect(formatQuantityValue({ quantity: NaN } as any)).toBe('0.0000');
+    expect(formatQuantityValue({ quantity: NaN } as VoCommercialAction)).toBe('0.0000');
   });
 });
 
 describe('formatQuantitySource', () => {
-  it('qto → Qto', () => expect(formatQuantitySource({ quantitySource: 'qto' } as any)).toBe('Qto'));
-  it('type-qto → Qto', () => expect(formatQuantitySource({ quantitySource: 'type-qto' } as any)).toBe('Qto'));
-  it('geometry → Geometry', () => expect(formatQuantitySource({ quantitySource: 'geometry' } as any)).toBe('Geometry'));
-  it('bbox → BBox Estimate', () => expect(formatQuantitySource({ quantitySource: 'bbox' } as any)).toBe('BBox Estimate'));
-  it('unknown → Derived', () => expect(formatQuantitySource({ quantitySource: 'other' } as any)).toBe('Derived'));
+  it('qto → Qto', () => expect(formatQuantitySource({ quantitySource: 'qto' } as VoCommercialAction)).toBe('Qto'));
+  it('type-qto → Qto', () => expect(formatQuantitySource({ quantitySource: 'type-qto' } as VoCommercialAction)).toBe('Qto'));
+  it('geometry → Geometry', () => expect(formatQuantitySource({ quantitySource: 'geometry' } as VoCommercialAction)).toBe('Geometry'));
+  it('bbox → BBox Estimate', () => expect(formatQuantitySource({ quantitySource: 'bbox' } as VoCommercialAction)).toBe('BBox Estimate'));
+  it('unknown → Derived', () => expect(formatQuantitySource({ quantitySource: 'other' } as unknown as VoCommercialAction)).toBe('Derived'));
 });
 
 describe('formatQuantityRisk', () => {
-  it('returns dash when no risk', () => expect(formatQuantityRisk({ quantityRisk: null } as any)).toBe('-'));
+  it('returns dash when no risk', () => expect(formatQuantityRisk({ quantityRisk: null } as unknown as VoCommercialAction)).toBe('-'));
   it('formats risk message and reason', () => {
-    const action = { quantityRisk: { message: 'High risk', reason: 'BBox fallback' } } as any;
+    const action = { quantityRisk: { message: 'High risk', reason: 'BBox fallback' } } as unknown as VoCommercialAction;
     expect(formatQuantityRisk(action)).toBe('High risk | BBox fallback');
   });
 });
@@ -108,7 +109,7 @@ describe('buildBqMappingContext', () => {
     expect(buildBqMappingContext([], {})).toBeUndefined();
   });
   it('builds context with items indexed by reference', () => {
-    const items = [{ itemReference: 'A1', description: 'test', unit: 'm2', contractRate: 100 }] as any;
+    const items: BqLineItem[] = [{ itemReference: 'A1', description: 'test', unit: 'm2', contractRate: 100 }];
     const ctx = buildBqMappingContext(items, { wall: 'A1' });
     expect(ctx).toBeDefined();
     expect(ctx!.itemsByReference['A1']).toBeDefined();

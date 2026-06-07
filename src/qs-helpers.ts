@@ -149,7 +149,7 @@ function inferThicknessText(
     .filter((value) => value > 0 && value < 1)
     .sort((a, b) => a - b);
   if (candidates.length > 0) {
-    return `${Math.round(candidates[0] * 1000)}mm thick`;
+    return `${Math.round(candidates[0]! * 1000)}mm thick`;
   }
 
   return '';
@@ -217,7 +217,8 @@ function inferProfileText(
     QS_PROFILE_PATTERNS.some((pattern) => pattern.test(quantity.key)),
   );
   if (entries.length > 0) {
-    return `${entries[0].value.toFixed(3)} ${entries[0].unit}`;
+    const entry = entries[0]!;
+    return `${entry.value.toFixed(3)} ${entry.unit}`;
   }
 
   return '';
@@ -365,13 +366,13 @@ function buildGenericLabel(
 }
 
 function buildSectionInfo(code: string): Smm2Section {
-  const section = SMM2_SECTIONS[code] ?? SMM2_SECTIONS.ZZ;
+  const section = SMM2_SECTIONS[code] ?? SMM2_SECTIONS.ZZ!;
 
   return {
-    code: section.code,
-    title: section.title,
-    sort: `${String(section.order).padStart(2, '0')}-${section.code}`,
-    label: `Section ${section.code}: ${section.title}`,
+    code: section!.code,
+    title: section!.title,
+    sort: `${String(section!.order).padStart(2, '0')}-${section!.code}`,
+    label: `Section ${section!.code}: ${section!.title}`,
   };
 }
 

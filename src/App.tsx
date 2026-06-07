@@ -13,6 +13,7 @@ import AuditPanel from './components/AuditPanel';
 import GuidePage from './components/GuidePage';
 import DwgPanel from './components/DwgPanel';
 import RvtAuditPanel from './components/RvtAuditPanel';
+import PasswordResetModal from './components/PasswordResetModal';
 import ViewerErrorBoundary from './components/ViewerErrorBoundary';
 import { Toaster } from 'react-hot-toast';
 import { useAuth } from './auth/AuthProvider';
@@ -37,10 +38,6 @@ export default function App() {
 
   // ── Auth & credits ────────────────────────────────────────────────────
   const { user, signOut, passwordRecovery, updatePassword, dismissPasswordRecovery } = useAuth();
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [passwordError, setPasswordError] = useState('');
-  const [passwordUpdating, setPasswordUpdating] = useState(false);
   const { balance: creditsBalance, loading: creditsLoading, error: creditsError, refresh: refreshCredits, setBalance: setCreditsBalance } = useCredits(user?.id);
 
   // ── Scroll sync refs (kept in App because they bridge two JSX subtrees) ─
@@ -402,81 +399,7 @@ export default function App() {
         </div>
       )}
       {passwordRecovery && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 px-6 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-[2rem] border border-slate-700 bg-slate-900/95 p-8 shadow-[0_30px_120px_rgba(2,6,23,0.75)]">
-            <div className="text-xs font-semibold uppercase tracking-[0.28em] text-blue-400">{t('password.label')}</div>
-            <h2 className="mt-4 text-2xl font-black text-white">{t('password.title')}</h2>
-            <p className="mt-2 text-sm text-slate-400">{t('password.hint')}</p>
-            <form
-              className="mt-6 space-y-4"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                setPasswordError('');
-                if (newPassword.length < 6) {
-                  setPasswordError(t('password.tooShort'));
-                  return;
-                }
-                if (newPassword !== confirmPassword) {
-                  setPasswordError(t('password.mismatch'));
-                  return;
-                }
-                setPasswordUpdating(true);
-                try {
-                  await updatePassword(newPassword);
-                  setNewPassword('');
-                  setConfirmPassword('');
-                  toast.success(t('password.success'));
-                } catch (err: unknown) {
-                  setPasswordError(err instanceof Error ? err.message : 'Failed to update password.');
-                } finally {
-                  setPasswordUpdating(false);
-                }
-              }}
-            >
-              <label className="block space-y-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{t('password.newPassword')}</span>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full rounded-2xl border border-slate-700/50 bg-slate-800/80 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500/60 focus:ring-2 focus:ring-blue-600/20"
-                  placeholder={t('password.newPlaceholder')}
-                  minLength={6}
-                  required
-                />
-              </label>
-              <label className="block space-y-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{t('password.confirmPassword')}</span>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full rounded-2xl border border-slate-700/50 bg-slate-800/80 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500/60 focus:ring-2 focus:ring-blue-600/20"
-                  placeholder={t('password.confirmPlaceholder')}
-                  minLength={6}
-                  required
-                />
-              </label>
-              {passwordError && <div className="rounded-2xl border border-red-900/70 bg-red-950/40 px-4 py-3 text-sm text-red-200">{passwordError}</div>}
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="submit"
-                  disabled={passwordUpdating}
-                  className="flex-1 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black uppercase tracking-[0.16em] text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {passwordUpdating ? t('password.updating') : t('password.update')}
-                </button>
-                <button
-                  type="button"
-                  className="rounded-2xl border border-slate-600 bg-slate-800 px-5 py-3 text-sm font-semibold text-slate-300 transition hover:bg-slate-700"
-                  onClick={() => { dismissPasswordRecovery(); setNewPassword(''); setConfirmPassword(''); setPasswordError(''); }}
-                >
-                  {t('password.skip')}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <PasswordResetModal updatePassword={updatePassword} onDismiss={dismissPasswordRecovery} />
       )}
     </AuthGuard>
   );
