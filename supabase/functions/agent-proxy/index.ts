@@ -1,12 +1,13 @@
 // @ts-nocheck
-// Supabase Edge Function: agent-proxy (NVIDIA NIM backend, OpenAI-compatible)
-// Auth + credit check via direct Supabase REST calls (no client library auth quirks)
+// Supabase Edge Function: agent-proxy (DeepSeek V4 Flash backend, OpenAI-compatible)
+// Auth + credit check via direct Supabase REST calls.
+// Migrated from NVIDIA NIM (Llama 3.3 70B) on 2026-06-11.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 
-const NVIDIA_ENDPOINT = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const DEFAULT_MODEL = 'meta/llama-3.3-70b-instruct';
-const MAX_TOKENS = 2048;
+const DEEPSEEK_ENDPOINT = 'https://api.deepseek.com/v1/chat/completions';
+const DEFAULT_MODEL = 'deepseek-v4-flash';
+const MAX_TOKENS = 4096;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,11 +27,11 @@ serve(async (request) => {
   if (request.method !== 'POST') return jsonResponse(405, { error: 'Use POST.' });
 
   try {
-    const nvidiaKey = Deno.env.get('NVIDIA_API_KEY');
+    const deepseekKey = Deno.env.get('DEEPSEEK_API_KEY');
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
 
-    if (!nvidiaKey) return jsonResponse(500, { error: 'Missing NVIDIA_API_KEY secret.' });
+    if (!deepseekKey) return jsonResponse(500, { error: 'Missing DEEPSEEK_API_KEY secret.' });
     if (!supabaseUrl || !anonKey) return jsonResponse(500, { error: 'Missing Supabase env vars.' });
 
     const authHeader = request.headers.get('Authorization') || '';
@@ -39,18 +40,11 @@ serve(async (request) => {
 
     // 1. Verify user via Supabase Auth REST API
     const authRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'apikey': anonKey,
-      },
+      headers: { 'Authorization': `Bearer ${token}`, 'apikey': anonKey },
     });
-    if (!authRes.ok) {
-      return jsonResponse(401, { error: 'Invalid or expired session.' });
-    }
+    if (!authRes.ok) return jsonResponse(401, { error: 'Invalid or expired session.' });
     const authUser = await authRes.json();
-    if (!authUser?.id) {
-      return jsonResponse(401, { error: 'Could not identify user.' });
-    }
+    if (!authUser?.id) return jsonResponse(401, { error: 'Could not identify user.' });
 
     // 2. Parse request body
     const payload = await request.json().catch(() => null);
@@ -60,7 +54,6 @@ serve(async (request) => {
 
     // 3. Deduct 1 credit via RPC (runs as the user so auth.uid() works)
     let newBalance: number | null = null;
-
     const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/consume_credit`, {
       method: 'POST',
       headers: {
@@ -71,7 +64,6 @@ serve(async (request) => {
       body: JSON.stringify({}),
     });
     const rpcJson = await rpcRes.json().catch(() => null);
-
     if (!rpcRes.ok) {
       const msg = rpcJson?.message || rpcJson?.error || '';
       if (msg.includes('NO_CREDITS')) {
@@ -79,96 +71,54 @@ serve(async (request) => {
       }
       return jsonResponse(500, { error: `Credit check failed: ${msg}` });
     }
-
     newBalance =
       rpcJson && typeof rpcJson === 'object' && typeof rpcJson.credits_balance === 'number'
         ? rpcJson.credits_balance
         : null;
 
-    // 4. Call NVIDIA NIM (OpenAI-compatible chat/completions)
+    // 4. Call DeepSeek V4 Flash (OpenAI-compatible, synchronous)
     const { messages, tools, system, model } = payload;
 
-    const nimMessages = [];
+    const dsMessages = [];
     if (typeof system === 'string' && system.trim()) {
-      nimMessages.push({ role: 'system', content: system });
+      dsMessages.push({ role: 'system', content: system });
     }
-    nimMessages.push(...messages);
+    dsMessages.push(...messages);
 
-    const nimBody = {
+    const dsBody: Record<string, unknown> = {
       model: typeof model === 'string' && model ? model : DEFAULT_MODEL,
-      messages: nimMessages,
+      messages: dsMessages,
       max_tokens: MAX_TOKENS,
       temperature: 0.2,
       top_p: 0.7,
       stream: false,
     };
     if (Array.isArray(tools) && tools.length > 0) {
-      nimBody.tools = tools;
-      nimBody.tool_choice = 'auto';
+      dsBody.tools = tools;
+      dsBody.tool_choice = 'auto';
     }
 
-    const nimRes = await fetch(NVIDIA_ENDPOINT, {
+    const dsRes = await fetch(DEEPSEEK_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${nvidiaKey}`,
+        'Authorization': `Bearer ${deepseekKey}`,
         'Accept': 'application/json',
       },
-      body: JSON.stringify(nimBody),
+      body: JSON.stringify(dsBody),
     });
 
-    let nimJson = await nimRes.json().catch(() => null);
-    if (!nimRes.ok) {
+    const dsJson = await dsRes.json().catch(() => null);
+    if (!dsRes.ok) {
       const msg =
-        nimJson?.error?.message ||
-        nimJson?.detail ||
-        nimJson?.message ||
-        `NVIDIA NIM request failed (${nimRes.status}).`;
-      return jsonResponse(nimRes.status, { error: msg });
+        dsJson?.error?.message ||
+        dsJson?.detail ||
+        dsJson?.message ||
+        `DeepSeek request failed (${dsRes.status}).`;
+      return jsonResponse(dsRes.status, { error: msg });
     }
 
-    // Handle NVIDIA NIM async/queued responses: when the model is cold or
-    // busy, NIM returns { infer_id, turn_id } instead of a chat completion.
-    // Poll the request status endpoint until the result is ready.
-    if (nimJson?.infer_id && !nimJson?.choices) {
-      const requestId = nimJson.infer_id;
-      const statusUrl = `${NVIDIA_ENDPOINT}/${requestId}`;
-      const POLL_INTERVAL = 1500; // ms
-      const MAX_POLLS = 40;       // 60s total
-
-      for (let i = 0; i < MAX_POLLS; i++) {
-        await new Promise((r) => setTimeout(r, POLL_INTERVAL));
-        const pollRes = await fetch(statusUrl, {
-          headers: {
-            'Authorization': `Bearer ${nvidiaKey}`,
-            'Accept': 'application/json',
-          },
-        });
-        const pollJson = await pollRes.json().catch(() => null);
-
-        // Completed — pollJson should contain the standard { choices: [...] }
-        if (pollJson?.choices) {
-          nimJson = pollJson;
-          break;
-        }
-        // Still pending — keep polling
-        if (pollJson?.status === 'pending' || pollJson?.status === 'running' || pollJson?.infer_id) {
-          continue;
-        }
-        // Unexpected status — bail
-        if (!pollRes.ok || pollJson?.status === 'failed') {
-          const msg = pollJson?.error?.message || pollJson?.detail || `Async inference failed (poll ${i}).`;
-          return jsonResponse(502, { error: msg });
-        }
-      }
-
-      // If we exhausted polls without getting choices, report timeout
-      if (!nimJson?.choices) {
-        return jsonResponse(504, { error: 'Model inference timed out after 60s. Please try again.' });
-      }
-    }
-
-    return jsonResponse(200, { response: nimJson, credits_balance: newBalance });
+    return jsonResponse(200, { response: dsJson, credits_balance: newBalance });
 
   } catch (err) {
     return jsonResponse(500, { error: err instanceof Error ? err.message : 'Unknown server error.' });

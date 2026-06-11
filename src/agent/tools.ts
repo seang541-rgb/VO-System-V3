@@ -15,9 +15,11 @@ import {
   lookupMeasurementCode,
   searchAllRegulations,
   searchBimRegulations,
+  searchClauses,
   searchMsStandards,
   searchUbbl,
   type BimRegulationRow,
+  type ContractClauseRow,
   type MeasurementCodeRow,
   type MsStandardRow,
   type UbblRow,
@@ -69,6 +71,17 @@ function formatBimForLLM(r: BimRegulationRow) {
         : null,
     scope_en: r.scope,
     scope_cn: r.scope_cn,
+  };
+}
+
+function formatClauseForLLM(r: ContractClauseRow) {
+  return {
+    citation: `${r.contract_type} Clause ${r.clause_number}`,
+    title: r.title_en || r.title_cn,
+    title_cn: r.title_cn,
+    category: r.category,
+    content_en: r.content_en,
+    content_cn: r.content_cn,
   };
 }
 
@@ -125,6 +138,29 @@ export interface AnthropicToolSchema {
 }
 
 export const AGENT_TOOL_SCHEMAS: AnthropicToolSchema[] = [
+  {
+    name: 'query_knowledge_base',
+    description:
+      'GENERAL CONSULTANCY ENTRY POINT — call this FIRST for any conceptual / advisory / "how do I" / "what does X mean" question from a QS or contractor that is not about a specific IFC/DWG file already loaded. Examples: "总包欠我钱怎么追", "客户改图加一道墙怎么算钱", "我可以申请EOT吗", "5层楼要几个楼梯", "G5可以投多大项目", "CIPAA是什么". This tool runs a parallel search across ALL knowledge bases (contract clauses across JKR/PAM/CIPAA/FIDIC, UBBL by-laws, Malaysian Standards, BIM regulations / CIDB grades, SMM2/NRM measurement codes) and returns whatever matches the user\'s question — regardless of whether IFC files are loaded. This is the ONLY tool you should call for advisory questions; do NOT call compare_ifc, analyze_contract_clause, or audit_ifc just to answer "what is" / "can I" / "how do I" questions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        question: {
+          type: 'string',
+          description: 'The user\'s natural-language question, in whatever language they asked it (Chinese / English / mixed). Use the actual words they used — do NOT translate or paraphrase first.',
+        },
+        searchTerms: {
+          type: 'string',
+          description: 'Optional: space-separated keywords distilled from the question for the SQL ILIKE search (e.g. "payment unpaid CIPAA" for 总包欠我钱). Be specific. If omitted, the question itself is used.',
+        },
+        limit: {
+          type: 'integer',
+          description: 'Max matches per knowledge source (default 5, max 10).',
+        },
+      },
+      required: ['question'],
+    },
+  },
   {
     name: 'query_dwg_takeoff',
     description:
@@ -395,6 +431,68 @@ export async function executeAgentTool(
   ctx: ToolContext,
 ): Promise<unknown> {
   switch (name) {
+    case 'query_knowledge_base': {
+      const question = typeof input.question === 'string' ? input.question.trim() : '';
+      if (!question) {
+        return {
+          error: 'question is required. STOP calling tools and ask the user what they want to know.',
+        };
+      }
+      const rawTerms = typeof input.searchTerms === 'string' ? input.searchTerms.trim() : '';
+      const limit = typeof input.limit === 'number' ? Math.max(1, Math.min(10, Math.floor(input.limit))) : 5;
+      // For each whitespace-separated term we run searchClauses + searchAllRegulations,
+      // then dedup by row id. Falls back to the raw question when no terms given.
+      const terms = (rawTerms || question)
+        .split(/[\s,，、；;]+/)
+        .map((t) => t.trim())
+        .filter((t) => t.length >= 2)
+        .slice(0, 5);
+      if (terms.length === 0) terms.push(question);
+
+      try {
+        const clauseMap = new Map<number, ContractClauseRow>();
+        const ubblMap = new Map<number, UbblRow>();
+        const msMap = new Map<number, MsStandardRow>();
+        const bimMap = new Map<number, BimRegulationRow>();
+        const codeMap = new Map<number, MeasurementCodeRow>();
+
+        await Promise.all(
+          terms.map(async (term) => {
+            const [clauses, regs, codes] = await Promise.all([
+              searchClauses(term, limit).catch(() => [] as ContractClauseRow[]),
+              searchAllRegulations(term, limit).catch(() => ({ ubbl: [], ms_standards: [], bim_regulations: [] })),
+              lookupMeasurementCode({ query: term, limit }).catch(() => [] as MeasurementCodeRow[]),
+            ]);
+            for (const r of clauses) clauseMap.set(r.id, r);
+            for (const r of regs.ubbl) ubblMap.set(r.id, r);
+            for (const r of regs.ms_standards) msMap.set(r.id, r);
+            for (const r of regs.bim_regulations) bimMap.set(r.id, r);
+            for (const r of codes) codeMap.set(r.id, r);
+          }),
+        );
+
+        const totalHits =
+          clauseMap.size + ubblMap.size + msMap.size + bimMap.size + codeMap.size;
+
+        return {
+          question,
+          searchTerms: terms,
+          totalHits,
+          instructions:
+            'Answer the user\'s question DIRECTLY in their language using the matches below. CITATION RULES: (1) Quote each match\'s `citation` field verbatim — e.g. "CIPAA 2012 Clause 35", "UBBL Part V, By-Law 23", "MS 1064:2014". (2) When multiple matches could apply, briefly compare them and pick the one whose title best fits the user\'s scenario; do NOT cite irrelevant rows. (3) Include concrete numbers (days, percentages, RM thresholds) when they appear. (4) If totalHits is 0, say so honestly and offer general construction-QS guidance from your own knowledge without inventing citations. (5) Do NOT call this tool again for the same question.',
+          matches: {
+            contract_clauses: [...clauseMap.values()].slice(0, limit * 2).map(formatClauseForLLM),
+            ubbl: [...ubblMap.values()].slice(0, limit * 2).map(formatUbblForLLM),
+            ms_standards: [...msMap.values()].slice(0, limit * 2).map(formatMsForLLM),
+            bim_regulations: [...bimMap.values()].slice(0, limit * 2).map(formatBimForLLM),
+            measurement_codes: [...codeMap.values()].slice(0, limit * 2).map(formatMeasurementForLLM),
+          },
+        };
+      } catch (err) {
+        return { error: `Knowledge base unreachable: ${err instanceof Error ? err.message : String(err)}` };
+      }
+    }
+
     case 'query_dwg_takeoff': {
       const items = ctx.dwgItems ?? [];
       if (items.length === 0) {
@@ -514,18 +612,10 @@ export async function executeAgentTool(
     }
 
     case 'analyze_contract_clause': {
-      if (ctx.baseComponents.length === 0 || ctx.revisionComponents.length === 0) {
-        return {
-          error:
-            'PREREQUISITE_NOT_MET: The user has not loaded IFC files yet. STOP calling tools. In your reply, instruct the user to: (1) upload base IFC and revision IFC using the CHOOSE FILE buttons at the top of the page, (2) click Run VO Comparison, (3) then re-ask the contract-clause question. Do NOT retry compare_ifc or any other tool — the user must take this action manually.',
-        };
-      }
-      if (!ctx.voResults) {
-        return {
-          error:
-            'PREREQUISITE_NOT_MET: IFC files are loaded but no VO comparison has been run yet. STOP calling tools. In your reply, instruct the user to click the Run VO Comparison button (or you may call compare_ifc ONCE to run it on their behalf). Do NOT loop on tool calls.',
-        };
-      }
+      const hasVoContext = ctx.baseComponents.length > 0 && ctx.revisionComponents.length > 0 && !!ctx.voResults;
+      // VO context is OPTIONAL now: without it we still return the clause text +
+      // explanation guidance. With it we attach the commercial snapshot so the LLM
+      // can map clause language to concrete VO numbers for a claim assessment.
       // Resolve clause text from either user paste (mode a) or KB lookup (mode b).
       let clauseText = typeof input.clauseText === 'string' ? input.clauseText.trim() : '';
       let clauseSource: 'user_pasted' | 'knowledge_base' = 'user_pasted';
@@ -562,9 +652,23 @@ export async function executeAgentTool(
         };
       }
       const claimType = typeof input.claimType === 'string' ? input.claimType : 'unspecified';
-      const breakdown = buildCommercialBreakdown(ctx.voResults, ctx.bqContext);
+
+      // Without VO context, return the clause + explanation guidance only.
+      if (!hasVoContext) {
+        return {
+          mode: 'explanation_only',
+          instructions:
+            'No IFC/VO comparison is loaded — answer as a contract-clause explanation. Quote the clause `citation` (e.g. "JKR_203 Clause 31.5"), summarise what it requires in plain language (use the user\'s language), and flag any concrete numbers (days, percentages). Do NOT pretend to evaluate a specific claim. Do NOT call this tool again.',
+          claimType,
+          clauseSource,
+          clauseMeta: kbClauseMeta,
+          clauseText,
+        };
+      }
+
+      const breakdown = buildCommercialBreakdown(ctx.voResults!, ctx.bqContext);
       const summary = breakdown.summary ?? {};
-      const qs = ctx.voResults.qsSummary ?? {} as Record<string, unknown>;
+      const qs = ctx.voResults!.qsSummary ?? {} as Record<string, unknown>;
 
       // Top 5 actions by absolute amount — gives the LLM concrete commercial anchors
       const topActions = [...(breakdown.actions ?? [])]
@@ -580,9 +684,9 @@ export async function executeAgentTool(
         clauseMeta: kbClauseMeta,
         clauseText,
         voSnapshot: {
-          added: ctx.voResults.added.length,
-          deleted: ctx.voResults.deleted.length,
-          modified: ctx.voResults.modified.length,
+          added: ctx.voResults!.added.length,
+          deleted: ctx.voResults!.deleted.length,
+          modified: ctx.voResults!.modified.length,
           formworkAlerts: 'formworkAlerts' in qs ? (qs as unknown as Record<string, number>).formworkAlerts ?? 0 : 0,
           eotFlags: 'eotFlags' in qs ? (qs as unknown as Record<string, number>).eotFlags ?? 0 : 0,
           starRateCandidates: 'starRateCandidates' in qs ? (qs as unknown as Record<string, number>).starRateCandidates ?? 0 : 0,

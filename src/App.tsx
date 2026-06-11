@@ -342,7 +342,7 @@ export default function App() {
           />
         ) : (
           <div className="flex h-[calc(100vh-48px)] flex-col border-t border-slate-700 bg-slate-900 px-4 py-4 lg:px-6">
-            <div className="flex-1">
+            <div className="min-h-0 flex-1">
               <CopilotPanel
                 toolContext={agentToolContext}
                 signedIn={!!user}
