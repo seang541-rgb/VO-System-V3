@@ -16,8 +16,6 @@ const NAV_TABS: { key: ActiveTab; i18nKey: string }[] = [
   { key: 'audit', i18nKey: 'header.tab.audit' },
   { key: 'valuation', i18nKey: 'header.tab.valuation' },
   { key: 'dwg', i18nKey: 'header.tab.dwg' },
-  // RVT tab hidden until APS credentials are available
-  // { key: 'rvt', i18nKey: 'header.tab.rvt' },
 ];
 
 export default function AppHeader({

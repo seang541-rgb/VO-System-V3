@@ -1,9 +1,9 @@
 # IdeaNest V1 — IFC Audit & VO Copilot
 
 ## Project Overview
-IFC-based audit, VO comparison, and quantity takeoff platform. Supports IFC, DWG, and RVT files.
-Targeted at Malaysian construction industry — JKR/SMM2 classification standards.
-Dual selling points: (A) instant audit/quantity takeoff, (B) VO comparison with AI copilot.
+IFC + DWG audit, VO comparison, and quantity takeoff platform with a DeepSeek-V4-Flash-powered Copilot grounded in a Malaysian construction knowledge base (CIPAA / JKR / UBBL / CIDB / MS).
+Targeted at Malaysian construction industry — JKR / SMM2 classification standards.
+Dual selling points: (A) instant audit / quantity takeoff (IFC + DWG), (B) VO comparison with AI Copilot.
 
 ## Tech Stack
 - **Frontend**: React 19 + TypeScript 5.8 + Tailwind CSS 4 + Vite 6
@@ -11,7 +11,7 @@ Dual selling points: (A) instant audit/quantity takeoff, (B) VO comparison with 
 - **Payments**: Stripe (credit-based billing)
 - **IFC Parsing**: web-ifc (client-side, no server upload)
 - **3D Viewer**: Three.js + web-ifc-three
-- **AI Agent**: NVIDIA NIM / Llama 3.3 70B (OpenAI-compatible via Supabase Edge Function proxy)
+- **AI Agent**: DeepSeek V4 Flash (OpenAI-compatible) via Supabase Edge Function proxy, with `query_knowledge_base` tool fanning out to contract clauses + UBBL + MS standards + BIM regulations + measurement codes
 - **Export**: xlsx (Excel), jspdf + jspdf-autotable (PDF)
 - **Notifications**: react-hot-toast (dark theme)
 - **Tests**: Vitest

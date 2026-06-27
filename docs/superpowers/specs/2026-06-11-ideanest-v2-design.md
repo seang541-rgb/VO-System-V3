@@ -38,7 +38,7 @@ The one validated customer signal is from an East Malaysia partner asking for a 
 | Knowledge base (26 contract clauses + 21 BIM regs + 22 MS standards) | `supabase/seed/01_create_tables.sql` … `11_seed_kb_expansion_jkr_cipaa.sql` | Powers the Copilot's verified citations (CIPAA / JKR / UBBL / CIDB) |
 | IFC VO comparison + Excel substantiation | `src/BimEngine.ts`, `src/vo/*`, `src/vo-diff-core.ts`, `src/vo-report.ts`, `src/components/ResultsTable.tsx`, `KPIGrid.tsx`, `BQMappingPanel.tsx` | The original VO System core, still the only path that earns its credits |
 | IFC SMM2 / JKR Audit | `src/audit/*`, `src/components/AuditPanel.tsx` | IdeaNest's original value prop |
-| DWG 2D takeoff | `src/dwg/*`, `src/components/DwgPanel.tsx`, `src/hooks/useDwgWorkspace.ts` | East Malaysia partner asked for this — only DWG-related signal from a real customer |
+| DWG 2D takeoff | `src/dwg/*`, `src/components/DwgPanel.tsx`, `src/hooks/useDwgTakeoff.ts` | East Malaysia partner asked for this — only DWG-related signal from a real customer |
 | Auth + Stripe + credits | `src/auth/*`, `src/components/AuthGuard.tsx`, `supabase/functions/stripe-webhook`, etc | Existing billing infra, no change |
 | UI shell | `src/App.tsx`, `src/components/AppHeader.tsx`, `AppSidebar.tsx`, `ErrorBoundary.tsx` | Refactored to drop the RVT tab |
 

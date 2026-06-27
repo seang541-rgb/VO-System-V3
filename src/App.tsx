@@ -12,7 +12,6 @@ import CopilotPanel from './components/CopilotPanel';
 import AuditPanel from './components/AuditPanel';
 import GuidePage from './components/GuidePage';
 import DwgPanel from './components/DwgPanel';
-import RvtAuditPanel from './components/RvtAuditPanel';
 import PasswordResetModal from './components/PasswordResetModal';
 import ViewerErrorBoundary from './components/ViewerErrorBoundary';
 import { Toaster } from 'react-hot-toast';
@@ -25,7 +24,6 @@ import { useBqMapping } from './hooks/useBqMapping';
 import { useVoComparison } from './hooks/useVoComparison';
 import { useAudit } from './hooks/useAudit';
 import { useDwgTakeoff } from './hooks/useDwgTakeoff';
-import { useRvtConvert, RVT_CREDIT_COST } from './hooks/useRvtConvert';
 import { useBilling } from './hooks/useBilling';
 import type { ToolContext } from './agent/tools';
 import type { ActiveTab } from './lib/format';
@@ -100,18 +98,12 @@ export default function App() {
   const dwg = useDwgTakeoff({ setSysLog, setActiveTab });
   const { dwgResult, dwgLoading, dwgError, dwgInputRef, handleDwgUpload } = dwg;
 
-  // ── Hook: RVT Convert ─────────────────────────────────────────────────
+  // ── Hook: Billing ─────────────────────────────────────────────────────
   const billing = useBilling({
     user, creditsBalance, refreshCredits, setCreditsBalance, setSysLog,
     voResults, v1File, v2File, bqItems, labelMappings,
   });
   const { billingError, billingNotice, showPaywall, setShowPaywall, isStartingCheckout, isExporting, exportWorkbook, handleTopUpCheckout } = billing;
-
-  const rvt = useRvtConvert({
-    ensureEngine, setSysLog, setActiveTab,
-    user, setCreditsBalance, setShowPaywall, refreshCredits,
-  });
-  const { rvtFile, rvtUrn, rvtConvertStatus, rvtConvertProgress, rvtConvertError, rvtAuditResult, rvtAuditDurationMs, rvtInputRef, handleRvtUpload, runRvtAudit } = rvt;
 
   // ── Engine resize effect (bridges engine + comparison state) ──────────
   useEffect(() => {
@@ -210,7 +202,6 @@ export default function App() {
       <input ref={v2InputRef} type="file" className="hidden" accept=".ifc,.IFC,application/octet-stream" onChange={(e) => handleIFCUpload(e, 'v2')} disabled={isRunning} />
       <input ref={bqInputRef} type="file" className="hidden" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={handleBqUpload} disabled={isRunning} />
       <input ref={dwgInputRef} type="file" className="hidden" accept=".dwg,.DWG" onChange={handleDwgUpload} />
-      <input ref={rvtInputRef} type="file" className="hidden" accept=".rvt,.RVT" onChange={handleRvtUpload} />
 
       {/* ── BODY: sidebar + main ───────────────────────────── */}
       <div className="flex">
@@ -227,7 +218,6 @@ export default function App() {
           onExportBqTemplate={exportBqTemplateWorkbook}
           onRunAudit={runAudit}
           auditState={auditState}
-          onUploadRvt={() => rvtInputRef.current?.click()}
           onResetWorkspace={resetWorkspace}
         />
 
@@ -325,20 +315,6 @@ export default function App() {
             loading={dwgLoading}
             error={dwgError}
             onUpload={() => dwgInputRef.current?.click()}
-          />
-        ) : activeTab === 'rvt' ? (
-          <RvtAuditPanel
-            rvtFile={rvtFile}
-            rvtUrn={rvtUrn}
-            convertStatus={rvtConvertStatus}
-            convertProgress={rvtConvertProgress}
-            convertError={rvtConvertError}
-            auditResult={rvtAuditResult}
-            auditDurationMs={rvtAuditDurationMs}
-            creditCost={RVT_CREDIT_COST}
-            onUpload={() => rvtInputRef.current?.click()}
-            onRunAudit={runRvtAudit}
-            canRunAudit={!!rvtFile && rvtConvertStatus === 'idle' && !!user}
           />
         ) : (
           <div className="flex h-[calc(100vh-48px)] flex-col border-t border-slate-700 bg-slate-900 px-4 py-4 lg:px-6">

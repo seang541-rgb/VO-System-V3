@@ -36,7 +36,6 @@ interface AppSidebarProps {
   onExportBqTemplate: () => void;
   onRunAudit: () => void;
   auditState: AuditState;
-  onUploadRvt: () => void;
   onResetWorkspace: () => void;
 }
 
@@ -47,7 +46,7 @@ export default function AppSidebar({
   isRunning, isExporting,
   onUploadBase, onUploadRevision, onUploadBq,
   onRunCompare, onExportExcel, onExportBqTemplate,
-  onRunAudit, auditState, onUploadRvt, onResetWorkspace,
+  onRunAudit, auditState, onResetWorkspace,
 }: AppSidebarProps) {
   const { t } = useLang();
   const canCompare = v1State === 'ready' && v2State === 'ready' && !isRunning;

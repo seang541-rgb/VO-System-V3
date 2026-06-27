@@ -1,4 +1,13 @@
-# VO System MVP
+# IdeaNest — IFC + DWG Audit & VO Copilot
+
+A browser-based platform for Malaysian QS, contractors, architects, and engineers. Combines:
+
+- Two-IFC VO comparison with `Added` / `Deleted` / `Modified` detection
+- SMM2 / JKR audit + quantity takeoff
+- DWG 2D takeoff for sites that don't yet use BIM
+- A DeepSeek V4 Flash AI Copilot grounded in a 60+ row knowledge base (CIPAA 2012, JKR 203A, UBBL, CIDB grades, MS standards)
+
+The original VO comparison MVP feature set is below:
 
 A lightweight IFC-based VO comparison MVP that can:
 
